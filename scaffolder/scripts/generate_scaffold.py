@@ -9,11 +9,11 @@ Supported surface types:
     neovius   - Neovius — high surface area
     bcc       - Body-centered cubic lattice
 
-Stiffness control (gyroid reference at 5 mm cell, 20×50×20 mm model):
+Stiffness control (gyroid reference at 5 mm cell, 20x50x20 mm model):
     isolevel   porosity   infill   stiffness
      -1.0       ~20 %      ~80 %   very stiff
      -0.5       ~37 %      ~63 %   stiff
-      0.0       ~54 %      ~46 %   medium  ← default
+      0.0       ~54 %      ~46 %   medium  <- default
      +0.5       ~71 %      ~29 %   soft
      +1.0       ~87 %      ~13 %   very soft
 
@@ -37,40 +37,12 @@ from pathlib import Path
 
 import numpy as np
 import PyScaffolder
-import pyvista as pv
 
-SUPPORTED_SURFACES = ["gyroid", "schwarzp", "schwarzd", "lidinoid", "neovius", "bcc"]
-
-
-# ---------------------------------------------------------------------------
-# I/O helpers
-# ---------------------------------------------------------------------------
-
-def load_mesh(path: Path) -> pv.PolyData:
-    mesh = pv.read(str(path))
-    if not mesh.is_manifold:
-        print("[warn] Mesh is not manifold — attempting clean()", file=sys.stderr)
-        mesh = mesh.clean()
-    return mesh.triangulate()
-
-
-def mesh_to_arrays(mesh: pv.PolyData) -> tuple[np.ndarray, np.ndarray]:
-    """Return (vertices float64, faces int32) for PyScaffolder."""
-    v = mesh.points.astype(np.float64)
-    f = mesh.faces.reshape(-1, 4)[:, 1:].astype(np.int32)
-    return v, f
-
-
-def save_stl(v: np.ndarray, f: np.ndarray, path: Path) -> None:
-    counts = np.full((len(f), 1), 3, dtype=np.int32)
-    pd = pv.PolyData(v, np.hstack([counts, f]))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pd.save(str(path))
-    print(f"[done] Saved → {path}")
+from scaffold import SUPPORTED_SURFACES, load_mesh, mesh_to_arrays, save_stl
 
 
 # ---------------------------------------------------------------------------
-# Parameter helpers
+# PyScaffolder parameter helpers
 # ---------------------------------------------------------------------------
 
 def build_params(
@@ -107,11 +79,11 @@ def find_isolevel_for_porosity(
 ) -> float:
     """Binary-search the isolevel that achieves target_porosity (void fraction).
 
-    Monotonicity: higher isolevel → more porous. Search range [-1.5, 1.5].
+    Monotonicity: higher isolevel -> more porous. Search range [-1.5, 1.5].
     """
     print(
         f"[info] Searching isolevel for porosity={target_porosity:.2f} "
-        f"(infill≈{(1 - target_porosity) * 100:.0f} %)…"
+        f"(infill~{(1 - target_porosity) * 100:.0f} %)..."
     )
     lo, hi = -1.5, 1.5
     mid, porosity = 0.0, 0.5
@@ -125,9 +97,9 @@ def find_isolevel_for_porosity(
         if abs(porosity - target_porosity) < tol:
             break
         if porosity > target_porosity:
-            hi = mid   # too porous → decrease isolevel (thicker walls)
+            hi = mid
         else:
-            lo = mid   # not porous enough → increase isolevel
+            lo = mid
 
     print(f"[info] Converged: isolevel={mid:+.4f}  porosity={porosity:.4f}")
     return mid
@@ -172,7 +144,7 @@ def main() -> None:
     parser.add_argument("--input", "-i", required=True, help="Input STL file")
     parser.add_argument(
         "--output", "-o", default=None,
-        help="Output STL (default: output/<stem>_<surface>_cell<size>mm[_infill<N>pct].stl)",
+        help="Output STL (default: output/<stem>_<surface>_cell<size>mm.stl)",
     )
     parser.add_argument(
         "--surface", "-s", default="gyroid", choices=SUPPORTED_SURFACES,
@@ -184,16 +156,15 @@ def main() -> None:
     )
     parser.add_argument(
         "--isolevel", type=float, default=0.0,
-        help="Isosurface level: negative = denser/stiffer (~80%% infill at -1.0); "
-             "positive = more porous/softer (~13%% infill at +1.0)",
+        help="Isosurface level: negative = denser/stiffer; positive = more porous/softer",
     )
     parser.add_argument(
         "--porosity", type=float, default=None,
-        help="Target void fraction 0–1 (overrides --isolevel; runs binary search)",
+        help="Target void fraction 0-1 (overrides --isolevel; runs binary search)",
     )
     parser.add_argument(
         "--infill-ratio", type=float, default=None,
-        help="Target solid fraction 0–1, e.g. 0.5 = 50 %% infill (overrides --isolevel)",
+        help="Target solid fraction 0-1, e.g. 0.5 = 50 %% infill (overrides --isolevel)",
     )
     parser.add_argument(
         "--grid-size", "-g", type=int, default=100,
@@ -205,7 +176,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--qsim", type=float, default=0.0,
-        help="Quadric mesh simplification 0–1 (0 = off, 0.5 = halve face count)",
+        help="Quadric mesh simplification 0-1 (0 = off, 0.5 = halve face count)",
     )
     parser.add_argument(
         "--shell", type=float, default=0.0,
@@ -221,7 +192,6 @@ def main() -> None:
         print(f"[error] Input not found: {input_path}", file=sys.stderr)
         sys.exit(1)
 
-    # ---- resolve output path -----------------------------------------------
     if args.output is None:
         out_dir = input_path.parent.parent / "output"
         tag = f"{args.surface}_cell{args.unit_cell_size:.4g}mm"
@@ -233,7 +203,6 @@ def main() -> None:
     else:
         output_path = Path(args.output)
 
-    # ---- load ---------------------------------------------------------------
     mesh = load_mesh(input_path)
     v, f = mesh_to_arrays(mesh)
     b = mesh.bounds
@@ -242,14 +211,13 @@ def main() -> None:
     print(f"[info] Input  : {input_path}")
     print(f"[info] Output : {output_path}")
     print(f"[info] Surface: {args.surface}")
-    print(f"[info] Extents: {extents[0]:.1f} × {extents[1]:.1f} × {extents[2]:.1f} mm")
+    print(f"[info] Extents: {extents[0]:.1f} x {extents[1]:.1f} x {extents[2]:.1f} mm")
     print(f"[info] Unit cell size: {args.unit_cell_size} mm  "
-          f"→ cells per axis: "
-          f"{extents[0]/args.unit_cell_size:.1f} × "
-          f"{extents[1]/args.unit_cell_size:.1f} × "
+          f"-> cells per axis: "
+          f"{extents[0]/args.unit_cell_size:.1f} x "
+          f"{extents[1]/args.unit_cell_size:.1f} x "
           f"{extents[2]/args.unit_cell_size:.1f}")
 
-    # ---- resolve isolevel ---------------------------------------------------
     target_porosity = None
     if args.infill_ratio is not None:
         target_porosity = 1.0 - args.infill_ratio
@@ -263,14 +231,13 @@ def main() -> None:
     else:
         isolevel = args.isolevel
 
-    # ---- generate -----------------------------------------------------------
     params = build_params(
         args.surface, args.unit_cell_size, isolevel,
         args.grid_size, args.smooth_steps, args.qsim, args.shell, args.verbose,
     )
     print(
         f"[info] Generating (grid={args.grid_size}, isolevel={isolevel:+.4f}, "
-        f"smooth={args.smooth_steps})…"
+        f"smooth={args.smooth_steps})..."
     )
     t0 = time.time()
     result = PyScaffolder.generate_scaffold(v, f, params, _progress)
