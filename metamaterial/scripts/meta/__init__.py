@@ -28,6 +28,7 @@ import importlib
 
 # --- eager: microgen-free, cheap ------------------------------------------
 from .mesh import load_mesh, save_stl, postprocess
+from .shell import DEFAULT_LAYER_HEIGHT, DEFAULT_WALL_LAYERS, shell_thickness, add_shell
 from .preview import axes_summary, recommended_axis, render_axes_png
 from .inspect import CheckResult, InspectionReport, inspect
 from .geometry import (
@@ -93,6 +94,8 @@ __all__ = [
     "get_profile_fn", "AXIS_INDEX",
     # mesh
     "load_mesh", "save_stl", "postprocess",
+    # shell
+    "DEFAULT_LAYER_HEIGHT", "DEFAULT_WALL_LAYERS", "shell_thickness", "add_shell",
     # preview
     "axes_summary", "recommended_axis", "render_axes_png",
     # inspect

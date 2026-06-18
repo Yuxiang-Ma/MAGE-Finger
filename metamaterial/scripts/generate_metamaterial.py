@@ -41,6 +41,9 @@ from meta import (  # noqa: E402
     postprocess,
     generate,
     effective_modulus,
+    DEFAULT_LAYER_HEIGHT,
+    shell_thickness,
+    add_shell,
 )
 
 
@@ -80,6 +83,12 @@ def main() -> None:
     parser.add_argument("--smooth-steps", type=int, default=0,
                         help="Taubin smoothing iterations on the output")
     parser.add_argument("--material", default="85A", help="TPU grade for stiffness report")
+    parser.add_argument("--wall-layers", type=int, default=0, metavar="N",
+                        help="Number of solid outer-wall layers (0 = no shell). "
+                             "Thickness = N × --layer-height")
+    parser.add_argument("--layer-height", type=float, default=DEFAULT_LAYER_HEIGHT,
+                        help=f"Layer height in mm for wall thickness calculation "
+                             f"(default {DEFAULT_LAYER_HEIGHT} mm = Bambu TPU standard)")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
     validate_args(args)
@@ -127,6 +136,12 @@ def main() -> None:
         resolution=args.resolution,
     )
     out = postprocess(result.mesh, smooth_steps=args.smooth_steps, verbose=args.verbose)
+
+    wall_t = shell_thickness(args.wall_layers, args.layer_height)
+    if wall_t > 0.0:
+        print(f"[info] Shell    : {args.wall_layers} layers × {args.layer_height} mm = {wall_t:.2f} mm")
+        out = add_shell(out, mesh, wall_t)
+
     elapsed = time.time() - t0
 
     if out.n_cells == 0:

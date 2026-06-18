@@ -182,6 +182,12 @@ def main() -> None:
         "--shell", type=float, default=0.0,
         help="Outer shell thickness in mm added around the scaffold (0 = none)",
     )
+    parser.add_argument("--wall-layers", type=int, default=0, metavar="N",
+                        help="Number of solid outer-wall layers (0 = no shell). "
+                             "Thickness = N × --layer-height. Overrides --shell when > 0.")
+    parser.add_argument("--layer-height", type=float, default=0.2,
+                        help="Layer height in mm for wall thickness calculation "
+                             "(default 0.2 mm = Bambu TPU standard)")
     parser.add_argument("--verbose", "-v", action="store_true")
 
     args = parser.parse_args()
@@ -231,9 +237,17 @@ def main() -> None:
     else:
         isolevel = args.isolevel
 
+    effective_shell = (
+        args.wall_layers * args.layer_height if args.wall_layers > 0 else args.shell
+    )
+    if args.wall_layers > 0:
+        print(f"[info] Shell  : {args.wall_layers} layers × {args.layer_height} mm = {effective_shell:.2f} mm")
+    elif effective_shell > 0:
+        print(f"[info] Shell  : {effective_shell:.2f} mm")
+
     params = build_params(
         args.surface, args.unit_cell_size, isolevel,
-        args.grid_size, args.smooth_steps, args.qsim, args.shell, args.verbose,
+        args.grid_size, args.smooth_steps, args.qsim, effective_shell, args.verbose,
     )
     print(
         f"[info] Generating (grid={args.grid_size}, isolevel={isolevel:+.4f}, "

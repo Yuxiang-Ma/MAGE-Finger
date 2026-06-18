@@ -210,6 +210,12 @@ def main() -> None:
     parser.add_argument("--shell-thickness", type=float, default=1.0,
                         help="Outer skin thickness (mm) to close the boundary. "
                              "0 disables it (leaves open edges at model surface).")
+    parser.add_argument("--wall-layers", type=int, default=0, metavar="N",
+                        help="Number of solid outer-wall layers (0 = no shell). "
+                             "Thickness = N × --layer-height. Overrides --shell-thickness when > 0.")
+    parser.add_argument("--layer-height", type=float, default=0.2,
+                        help="Layer height in mm for wall thickness calculation "
+                             "(default 0.2 mm = Bambu TPU standard)")
     parser.add_argument(
         "--profile", default="linear", choices=list(PROFILES),
         help="Gradient profile shape: linear, sigmoid, exponential, plateau.",
@@ -261,7 +267,13 @@ def main() -> None:
     print(f"[info] Cell size: {args.cell_size_start:.4g} -> {args.cell_size_end:.4g} mm")
     print(f"[info] Iso level: {iso_start:+.3f} -> {iso_end:+.3f}")
     print(f"[info] Profile  : {args.profile}")
-    print(f"[info] Shell    : {args.shell_thickness:.2f} mm")
+    effective_shell = (
+        args.wall_layers * args.layer_height if args.wall_layers > 0 else args.shell_thickness
+    )
+    if args.wall_layers > 0:
+        print(f"[info] Shell    : {args.wall_layers} layers × {args.layer_height} mm = {effective_shell:.2f} mm")
+    else:
+        print(f"[info] Shell    : {effective_shell:.2f} mm")
 
     # Load mesh
     mesh = pv.read(str(input_path))
@@ -291,7 +303,7 @@ def main() -> None:
         bounds,
         profile_fn=profile_fn,
     )
-    field = apply_boundary_and_skin(tpms_field, inside, sdf, args.shell_thickness)
+    field = apply_boundary_and_skin(tpms_field, inside, sdf, effective_shell)
 
     print("[4/4] Marching cubes + post-process...")
     f_flat = field.ravel(order="C").astype(np.float64).reshape(-1, 1)
