@@ -59,6 +59,7 @@ from scaffold import (
 from scaffold.inspect import inspect as _run_inspect
 from scaffold.profile import PROFILES, get_profile_fn
 from scaffold.stiffness import stiffness_report, print_stiffness_report
+from scaffold.simplify import simplify_to_count, mesh_quality_stats, DEFAULT_TARGET_FACES
 
 AXIS_MAP = {"x": 0, "y": 1, "z": 2}
 
@@ -213,6 +214,12 @@ def main() -> None:
         "--profile", default="linear", choices=list(PROFILES),
         help="Gradient profile shape: linear, sigmoid, exponential, plateau.",
     )
+    parser.add_argument(
+        "--simplify", type=int, default=None, metavar="TARGET_FACES",
+        help="Reduce output to approximately TARGET_FACES triangles using quadric "
+             f"decimation after generation (default: no simplification). "
+             f"Suggested value: {DEFAULT_TARGET_FACES:,} for fast slicer loading.",
+    )
 
     args = parser.parse_args()
     validate_args(args)
@@ -302,6 +309,13 @@ def main() -> None:
         sys.exit(1)
 
     out_mesh = postprocess(verts, faces, args.smooth_steps, verbose=True)
+
+    if args.simplify is not None and out_mesh.n_cells > args.simplify:
+        before = out_mesh.n_cells
+        out_mesh = simplify_to_count(out_mesh, args.simplify)
+        print(f"      Simplified: {before:,} → {out_mesh.n_cells:,} faces "
+              f"({100*(1 - out_mesh.n_cells/before):.1f}% removed)  "
+              f"open={out_mesh.n_open_edges}")
 
     elapsed = time.time() - t0
 

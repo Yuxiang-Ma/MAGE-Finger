@@ -8,6 +8,7 @@ Submodules:
   stiffness — Gibson-Ashby stiffness model (iso level <-> spring constant)
   profile   — gradient profile shapes and GradientDesign object
   geometry  — mesh geometry analysis and gradient feasibility checks
+  simplify  — mesh simplification (face-count reduction for fast slicer loading)
 """
 
 from .tpms import SUPPORTED_SURFACES, TPMS_FUNCTIONS
@@ -38,6 +39,14 @@ from .geometry import (
     ModelInfo, model_info,
     cross_section_area, zone_bounds, check_gradient_feasibility,
 )
+from .simplify import (
+    simplify,
+    simplify_to_count,
+    auto_simplify,
+    mesh_quality_stats,
+    simplify_file,
+    DEFAULT_TARGET_FACES,
+)
 
 __all__ = [
     # tpms
@@ -60,4 +69,7 @@ __all__ = [
     # geometry
     "ModelInfo", "model_info",
     "cross_section_area", "zone_bounds", "check_gradient_feasibility",
+    # simplify
+    "simplify", "simplify_to_count", "auto_simplify",
+    "mesh_quality_stats", "simplify_file", "DEFAULT_TARGET_FACES",
 ]
