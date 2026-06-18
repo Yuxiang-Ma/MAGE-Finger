@@ -1,236 +1,535 @@
-# TPMS Scaffold Generator for Tunable-Stiffness TPU Soft Pads
+# MAGE Finger — TPMS Scaffold Generator
 
-Converts an STL geometry into a Triply Periodic Minimal Surface (TPMS) scaffold with controllable stiffness. Designed for TPU printing on Bambu Lab printers.
+Converts an arbitrary STL model into a Triply Periodic Minimal Surface (TPMS) lattice scaffold with controllable stiffness. Designed for soft TPU finger pads but works for any geometry.
+
+Two generation modes:
+
+- **Uniform** (`generate_scaffold.py`) — constant stiffness, cleanest watertight result via PyScaffolder.
+- **Gradient** (`generate_gradient_scaffold.py`) — stiffness varies continuously along one axis. Supports spring-constant targets via the built-in Gibson-Ashby stiffness model.
 
 ---
 
-## Overview
+## Table of Contents
 
-TPMS surfaces are smooth, mathematically defined lattice structures that offer excellent mechanical tunability. Stiffness is controlled by two independent parameters:
-
-| Parameter | Mechanism | Effect |
-|-----------|-----------|--------|
-| **Unit cell size** (mm) | Pore spatial frequency | Smaller = finer lattice = stiffer at equal porosity |
-| **Isolevel** | Wall thickness offset | Lower (negative) = denser walls = stiffer |
-
-Two generation modes are supported:
-
-- `generate_scaffold.py` — **Uniform scaffold**: constant stiffness throughout the geometry. Uses PyScaffolder's native voxelisation and clipping for a near-watertight result.
-- `generate_gradient_scaffold.py` — **Gradient scaffold**: stiffness varies continuously along one axis (e.g., stiff base → soft tip). Uses direct marching cubes on a custom TPMS field.
+1. [Requirements](#requirements)
+2. [Quick Start](#quick-start)
+3. [Supported TPMS Surfaces](#supported-tpms-surfaces)
+4. [Scripts](#scripts)
+   - [Uniform Scaffold](#uniform-scaffold-generate_scaffoldpy)
+   - [Gradient Scaffold](#gradient-scaffold-generate_gradient_scaffoldpy)
+   - [Printability Check](#printability-check-inspect_scaffoldpy)
+5. [Design from Stiffness Targets](#design-from-stiffness-targets)
+6. [Scaffold Package API](#scaffold-package-api)
+7. [Design Workflow](#design-workflow)
+8. [Tuning Reference](#tuning-reference)
+9. [Known Limitations](#known-limitations)
+10. [Running Tests](#running-tests)
 
 ---
 
 ## Requirements
 
-```
-PyScaffolder >= 1.5.3
-pyvista
-numpy
-scipy          # only for analysis tools
-```
-
-PyScaffolder supports Python 3.8–3.13 on Windows / Linux:
-
 ```bash
 pip install PyScaffolder pyvista numpy scipy
 ```
 
+PyScaffolder 1.5.3+ is required.  Tested on Python 3.10–3.12, Windows 10.
+
 ---
 
-## Directory Layout
+## Quick Start
 
+```bash
+cd scaffolder/scripts
+
+# Uniform scaffold
+python generate_scaffold.py --input ../input/test.stl
+
+# Gradient scaffold (manual iso levels)
+python generate_gradient_scaffold.py \
+    --input ../input/finger.stl \
+    --axis y --isolevel-start -0.3 --isolevel-end 0.75 \
+    --profile sigmoid
+
+# Gradient scaffold from spring-constant targets (auto iso)
+python generate_gradient_scaffold.py \
+    --input ../input/finger.stl \
+    --axis y --k-base 5.0 --k-tip 1.0 \
+    --pad-area 20 --pad-thickness 5 \
+    --profile sigmoid
+
+# Inspect a generated STL
+python inspect_scaffold.py ../output/finger_gyroid_gradient_y.stl
 ```
-scaffolder/
-├── input/          ← place your STL models here
-├── output/         ← generated scaffolds appear here
-├── scripts/
-│   ├── generate_scaffold.py           # uniform stiffness
-│   └── generate_gradient_scaffold.py  # gradient stiffness
-└── README.md
-```
+
+> **Print tip:** The gradient output is ~10–12 % smaller than the input STL.  Scale by **1.13×** in Bambu Studio (Object → Scale → Uniform).
 
 ---
 
 ## Supported TPMS Surfaces
 
-| Name | Description | Typical use |
-|------|-------------|-------------|
-| `gyroid` | Schoen G surface — smooth channels, high connectivity | General-purpose, best for TPU |
-| `schwarzp` | Schwartz Primitive — open cubic pores | High breathability |
-| `schwarzd` | Schwartz Diamond — high strut connectivity | Impact absorption |
-| `lidinoid` | Chiral, asymmetric channels | Anisotropic response |
-| `neovius` | Very high surface area | Damping applications |
+| Name | Description | Best for |
+|------|-------------|---------|
+| `gyroid` | Schoen G — smooth channels, high connectivity | General-purpose, recommended for TPU |
+| `schwarzp` | Schwartz Primitive — open cubic pores | Breathability |
+| `schwarzd` | Schwartz Diamond — high strut count | Impact absorption |
+| `lidinoid` | Chiral, asymmetric channels | Anisotropic stiffness |
+| `neovius` | Very high surface area | Damping |
 | `bcc` | Body-centred cubic lattice | Directional stiffness |
 
 ---
 
-## Script 1 — Uniform Scaffold
+## Scripts
 
-```
-scripts/generate_scaffold.py
-```
+### Uniform Scaffold — `generate_scaffold.py`
 
-### Usage
+Uses PyScaffolder's native pipeline (fastest, produces the best mesh quality).
 
 ```bash
-# Minimal (gyroid, 5 mm cell, ~50 % infill):
-python generate_scaffold.py -i ../input/test.stl
+# Default (gyroid, 5 mm cell, iso 0.0)
+python generate_scaffold.py --input ../input/test.stl
 
-# Specify infill ratio (auto-searches isolevel via binary search):
-python generate_scaffold.py -i ../input/test.stl --infill-ratio 0.6
+# Specify infill ratio (auto-searches iso level)
+python generate_scaffold.py --input ../input/test.stl --infill-ratio 0.6
 
-# Specify surface type and cell size:
-python generate_scaffold.py -i ../input/test.stl -s schwarzp -u 3.0
-
-# High-quality output (for final print):
-python generate_scaffold.py -i ../input/test.stl -g 150 --smooth-steps 5
+# Different surface and cell size
+python generate_scaffold.py --input ../input/test.stl -s schwarzp -u 3.0
 ```
-
-### Parameters
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--input / -i` | required | Input STL file |
-| `--output / -o` | auto | Output STL (default: `output/<stem>_<surface>_cell<size>mm.stl`) |
-| `--surface / -s` | `gyroid` | TPMS surface type |
-| `--unit-cell-size / -u` | `5.0` | Unit cell period in mm |
-| `--isolevel` | `0.0` | Isosurface offset (see table below) |
-| `--infill-ratio` | — | Target solid fraction 0–1; runs binary search for isolevel |
-| `--porosity` | — | Target void fraction 0–1; same as above |
-| `--grid-size / -g` | `100` | Voxelisation resolution (60 for draft, 150+ for print) |
-| `--smooth-steps` | `3` | Laplacian smoothing iterations |
-| `--qsim` | `0.0` | Quadric simplification 0–1 (0 = off) |
-| `--shell` | `0.0` | Extra outer shell thickness in mm |
-
-### Isolevel → Stiffness Reference (gyroid, 5 mm cell)
-
-| Isolevel | Porosity | Infill | Stiffness |
-|----------|----------|--------|-----------|
-| −1.0 | ~20 % | ~80 % | very stiff |
-| −0.5 | ~37 % | ~63 % | stiff |
-| 0.0 | ~54 % | ~46 % | medium |
-| +0.5 | ~71 % | ~29 % | soft |
-| +1.0 | ~87 % | ~13 % | very soft |
-
-> The relationship between isolevel and porosity depends on surface type and unit cell size. Use `--infill-ratio` to target a specific value and let the script search automatically.
-
----
-
-## Script 2 — Gradient Scaffold
-
-```
-scripts/generate_gradient_scaffold.py
-```
-
-Stiffness varies continuously along a chosen axis. Two parameters can be independently or simultaneously gradated.
-
-### Usage
-
-```bash
-# Gradient cell size along Z (stiff bottom → soft top):
-python generate_gradient_scaffold.py \
-    -i ../input/test.stl \
-    --cell-size-start 3.0 --cell-size-end 8.0 \
-    --axis z
-
-# Gradient wall thickness (dense bottom → porous top):
-python generate_gradient_scaffold.py \
-    -i ../input/test.stl \
-    --isolevel-start -0.5 --isolevel-end 0.3 \
-    --axis z
-
-# Combined gradient (cell size + isolevel vary together):
-python generate_gradient_scaffold.py \
-    -i ../input/test.stl \
-    --cell-size-start 3.0 --cell-size-end 8.0 \
-    --isolevel-start -0.3 --isolevel-end 0.3 \
-    --axis z --grid-size 100 --smooth-steps 10
-```
-
-### Parameters
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--input / -i` | required | Input STL file |
+| `--input / -i` | required | Input STL |
 | `--output / -o` | auto | Output STL |
-| `--surface / -s` | `gyroid` | TPMS surface type |
-| `--axis / -a` | `z` | Gradient direction: `x`, `y`, or `z` |
-| `--cell-size-start` | `5.0` | Unit cell size (mm) at axis minimum |
-| `--cell-size-end` | `5.0` | Unit cell size (mm) at axis maximum |
-| `--isolevel-start` | `0.0` | Isolevel at axis minimum |
-| `--isolevel-end` | `0.0` | Isolevel at axis maximum |
-| `--grid-size / -g` | `80` | Voxel resolution along longest axis |
-| `--smooth-steps` | `10` | Taubin smoothing iterations |
-| `--shell-thickness` | `1.0` | Outer skin thickness (mm) to close boundary |
+| `--surface / -s` | `gyroid` | TPMS surface |
+| `--unit-cell-size / -u` | `5.0` | Cell period in mm |
+| `--isolevel` | `0.0` | Isosurface offset |
+| `--infill-ratio` | — | Target solid fraction; runs binary iso search |
+| `--porosity` | — | Target void fraction (= 1 − infill-ratio) |
+| `--grid-size / -g` | `100` | Voxel resolution |
+| `--smooth-steps` | `3` | Smoothing passes |
 
-### How the Gradient Works
+**Isolevel → stiffness reference (gyroid, 5 mm cell):**
 
-At every voxel position, the local parameters are interpolated linearly:
-
-```
-t = (axis_coordinate - axis_min) / (axis_max - axis_min)   # 0 → 1
-
-cell_size(t) = cell_size_start + t × (cell_size_end - cell_size_start)
-isolevel(t)  = isolevel_start  + t × (isolevel_end  - isolevel_start)
-coff(t)      = 2π / cell_size(t)
-```
-
-The TPMS field is evaluated at each voxel with its local `coff` and `isolevel`. Near the model surface (within `--shell-thickness` mm) the field is driven strongly negative using a solid-drive boundary, which guarantees the marching-cubes isosurface always closes at the model boundary — producing a watertight outer shell. Disconnected floating components are removed and any residual open edges are closed before saving.
+| iso | Solid fraction | Relative stiffness |
+|-----|---------------|--------------------|
+| −0.3 | 52 % | 1.17× |
+| 0.0  | 48 % | 1.00× (reference) |
+| 0.25 | 38 % | 0.63× |
+| 0.50 | 29 % | 0.36× |
+| 0.75 | 21 % | 0.19× |
+| 1.00 | 14 % | 0.085× |
+| 1.25 | 8 %  | 0.028× |
 
 ---
 
-## Workflow for Bambu Lab (TPU)
+### Gradient Scaffold — `generate_gradient_scaffold.py`
 
-1. **Generate** the scaffold STL with the scripts above.
-2. **Import** into Bambu Studio.
-3. Set filament to **TPU 95A** (or your specific grade).
-4. Recommended print settings for scaffold structures:
-   - Speed: 30–50 mm/s
-   - No supports (TPMS is self-supporting)
-   - Infill: 100 % (the scaffold itself is the structure)
-   - Wall loops: 1–2
-5. The gradient scaffold is watertight (0 open edges) — no Repair step needed. The inspect script confirms printability automatically after generation.
-6. If the printed part is smaller than expected, scale up by 1.13× in Bambu Studio (Object → Scale → Uniform).
-7. Slice and print.
+Stiffness varies continuously along a chosen axis.  `base` = axis minimum, `tip` = axis maximum.
+
+#### Manual iso levels
+
+```bash
+python generate_gradient_scaffold.py \
+    --input ../input/finger.stl \
+    --axis y \
+    --isolevel-start -0.3 --isolevel-end 0.75 \
+    --profile sigmoid \
+    --grid-size 80 --smooth-steps 10
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--input / -i` | required | Input STL |
+| `--output / -o` | auto | Output STL |
+| `--surface / -s` | `gyroid` | TPMS surface |
+| `--axis / -a` | `z` | Gradient axis: `x`, `y`, `z` |
+| `--isolevel-start` | `0.0` | Iso level at base (stiff end) |
+| `--isolevel-end` | `0.0` | Iso level at tip (soft end) |
+| `--cell-size-start` | `5.0` | Cell size at base (mm) |
+| `--cell-size-end` | `5.0` | Cell size at tip (mm) |
+| `--profile` | `linear` | Gradient shape: `linear`, `sigmoid`, `exponential`, `plateau` |
+| `--grid-size / -g` | `80` | Voxel resolution |
+| `--smooth-steps` | `10` | Taubin smoothing passes |
+| `--shell-thickness` | `1.0` | Outer skin thickness (mm) |
+
+**Gradient profiles:**
+
+| Profile | Shape | When to use |
+|---------|-------|-------------|
+| `linear` | Constant rate | Sweep testing |
+| `sigmoid` | Slow at both ends, sharp knee | Finger pads — smooth feel throughout |
+| `exponential` | Stays stiff at base, softens rapidly at tip | Maximise tip compliance |
+| `plateau` | Stiff zone → ramp → soft zone | Multi-zone designs |
+
+#### Spring-constant targets (auto iso)
+
+When `--k-base` and `--k-tip` are supplied the iso levels are computed automatically from the Gibson-Ashby stiffness model.  `--isolevel-start` / `--isolevel-end` are ignored.
+
+```bash
+python generate_gradient_scaffold.py \
+    --input ../input/finger.stl \
+    --axis y \
+    --k-base 5.0 --k-tip 1.0 \
+    --pad-area 20 --pad-thickness 5 \
+    --material 95A --profile sigmoid
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--k-base` | — | Spring constant at stiff end (N/mm) |
+| `--k-tip` | — | Spring constant at soft end (N/mm), must be < `--k-base` |
+| `--pad-area` | — | Cross-sectional area perpendicular to gradient axis (mm²) |
+| `--pad-thickness` | — | Pad height along the gradient axis (mm) |
+| `--material` | `95A` | TPU grade: `95A`, `87A`, `83A` |
+
+A stiffness design report is printed before generation:
+
+```
+====================================================
+  Stiffness Design Report
+====================================================
+  Base (stiff end): 5.00 N/mm  ->  iso +0.504  (29% solid)
+  Tip  (soft end) : 1.00 N/mm  ->  iso +1.045  (14% solid)
+  Stiffness ratio : 5.0x  (E_rel Gibson-Ashby = 0.249)
+  Gradient args   : --isolevel-start 0.504 --isolevel-end 1.045
+====================================================
+```
+
+**How the gradient field works:**
+
+```
+t = (axis_coordinate − axis_min) / (axis_max − axis_min)   # linear position [0, 1]
+v = profile_fn(t)                                           # shaped position [0, 1]
+cell_size(v) = cell_size_start + v × (cell_size_end − cell_size_start)
+iso(v)       = iso_start       + v × (iso_end       − iso_start)
+```
+
+Near the model surface (within `--shell-thickness` mm) the field is driven strongly negative, forcing the marching-cubes isosurface to close at the model boundary and produce a watertight outer shell.
 
 ---
 
-## Stiffness Design Guide
+### Printability Check — `inspect_scaffold.py`
 
-### Tuning a uniform pad
+```bash
+python inspect_scaffold.py FILE [FILE ...] [--verbose]
+```
 
-| Goal | Action |
-|------|--------|
-| Stiffer overall | Decrease `--unit-cell-size` or decrease `--isolevel` (more negative) |
-| Softer overall | Increase `--unit-cell-size` or increase `--isolevel` (more positive) |
-| Fixed porosity, change pore size | Adjust `--unit-cell-size` with `--infill-ratio` fixed |
+| Check | PASS | WARN | FAIL |
+|-------|------|------|------|
+| Open edges | 0 | 1–50 | > 50 |
+| Non-manifold edges | 0 | — | any |
+| Connectivity | single body | < 5 floating pieces | fragmented |
+| Degenerate faces | 0 | — | any |
+| Feature size (2V/A) | ≥ min_feature | ≥ nozzle | < nozzle |
+| Normals | consistent | — | inconsistent |
+| Build volume | fits | — | exceeds |
 
-### Tuning a gradient pad (e.g., finger soft pad)
+> **Feature size WARN is expected.** The 2V/A hydraulic thickness metric returns ~0.5 mm for gyroid tessellation edges, but actual strut widths are 3–8 mm.  Safe to ignore for TPU.
 
-| Requirement | Configuration |
-|-------------|---------------|
-| Stiff base, soft tip | `--axis z --cell-size-start 3.0 --cell-size-end 8.0` |
-| Soft core, stiff shell | Use radial design (requires custom STL splitting) |
-| Progressive compliance | Combine cell size and isolevel gradients |
+---
 
-### Expected cell size range
+## Design from Stiffness Targets
 
-Practical limits for FDM printing of TPU with a 0.4 mm nozzle:
+The stiffness model maps spring-constant targets to iso levels using the **Gibson-Ashby open-cell foam model**:
 
-| Constraint | Recommended range |
-|------------|-------------------|
-| Minimum cell size | ≥ 2.5 mm (strut resolution) |
-| Maximum cell size | ≤ 15 mm (structural integrity) |
-| Typical range | 3 – 8 mm |
+```
+E_scaffold = E_bulk × ρ_rel²
+k = E_scaffold × A / L
+```
+
+Where `A` is the cross-sectional area (mm²), `L` is the pad thickness (mm), and `E_bulk` is the bulk TPU Young's modulus (15 MPa for 95A, 8 MPa for 87A, 5 MPa for 83A).
+
+### Quick design from Python
+
+```python
+from scaffold.stiffness import stiffness_report, print_stiffness_report
+from scaffold.profile import design_from_stiffness
+from scaffold.geometry import model_info
+
+# Step 1: analyse the model
+info = model_info("finger.stl")
+info.print()
+
+# Step 2: compute iso levels from spring-constant targets
+report = stiffness_report(
+    k_base=5.0, k_tip=1.0,
+    cross_section_mm2=info.cross_section_area(),
+    thickness_mm=info.max_dim,
+)
+print_stiffness_report(report)
+# -> iso_base, iso_tip, exact CLI args to paste
+
+# Step 3: build a GradientDesign object with a profile
+design = design_from_stiffness(
+    k_base=5.0, k_tip=1.0,
+    cross_section_mm2=20, thickness_mm=5,
+    cell_size=5.0, profile="sigmoid",
+)
+design.summary()
+print(design.cli_args())
+# ['--isolevel-start', '0.504', '--isolevel-end', '1.045', ...]
+```
+
+### Achievable spring-constant ranges
+
+Softer spring constants require smaller cross-section or thinner pad because the TPU bulk modulus (15 MPa) is relatively high.
+
+| Pad size | Thickness | iso = 0.0 | iso = 0.75 | iso = 1.25 |
+|----------|-----------|-----------|-----------|-----------|
+| 4.5×4.5 mm (20 mm²) | 5 mm | 86 N/mm | 17 N/mm | 2.4 N/mm |
+| 5×5 mm (25 mm²) | 5 mm | 108 N/mm | 21 N/mm | 3.0 N/mm |
+| 15×15 mm (225 mm²) | 8 mm | 970 N/mm | 186 N/mm | 27 N/mm |
+
+For sub-1 N/mm with a large pad, use a softer TPU grade (`--material 83A`) or calibrate against a physical measurement (see below).
+
+### Calibration-based workflow
+
+The model predicts relative stiffness accurately.  For absolute accuracy, calibrate once:
+
+```python
+from scaffold.stiffness import iso_for_stiffness_ratio
+
+# Measured on your printer: iso=0.5 gives k=3 N/mm
+# Target: tip should be 0.33× as stiff as base
+iso_tip = iso_for_stiffness_ratio(ratio=0.33, iso_ref=0.5)
+print(f"iso_tip = {iso_tip:.3f}")
+```
+
+---
+
+## Scaffold Package API
+
+All modules are in `scripts/scaffold/` and importable from any script in `scripts/`.
+
+```python
+from scaffold import (
+    SUPPORTED_SURFACES, TPMS_FUNCTIONS,       # tpms
+    load_mesh, save_stl, postprocess,          # mesh
+    build_uniform_grid, compute_inside_and_sdf,
+    compute_tpms_gradient_field,               # field
+    apply_boundary_and_skin,
+    inspect,                                   # inspect
+    solid_fraction, spring_constant,
+    iso_for_spring_constant, stiffness_report, # stiffness
+    GradientDesign, design_from_stiffness,
+    design_from_iso, PROFILES,                 # profile
+    model_info, zone_bounds,
+    check_gradient_feasibility,                # geometry
+)
+```
+
+### `scaffold.stiffness`
+
+Gibson-Ashby physics mapping iso level ↔ solid fraction ↔ spring constant.
+
+| Function | Description |
+|----------|-------------|
+| `solid_fraction(iso, surface)` | Iso level → solid fraction (empirical table) |
+| `iso_from_solid_fraction(frac, surface)` | Inverse of above |
+| `relative_stiffness(iso, iso_ref)` | E(iso) / E(iso_ref) |
+| `iso_for_stiffness_ratio(ratio, iso_ref)` | Find iso where E/E_ref = ratio |
+| `spring_constant(iso, area, thickness)` | Iso + geometry → k (N/mm) |
+| `iso_for_spring_constant(k, area, thickness)` | Inverse: k + geometry → iso |
+| `stiffness_report(k_base, k_tip, area, thickness)` | Full design report dict |
+| `print_stiffness_report(report)` | Pretty-print the report |
+
+Calibration table (gyroid):
+
+| iso | Solid | Relative E |
+|-----|-------|-----------|
+| −0.3 | 52 % | 1.17× |
+| 0.0  | 48 % | 1.00× |
+| 0.25 | 38 % | 0.63× |
+| 0.50 | 29 % | 0.36× |
+| 0.75 | 21 % | 0.19× |
+| 1.00 | 14 % | 0.085× |
+| 1.25 | 8 %  | 0.028× |
+
+### `scaffold.profile`
+
+Gradient profile shapes and the `GradientDesign` object.
+
+| Function / Class | Description |
+|-----------------|-------------|
+| `linear(t)` | Constant rate (t = v) |
+| `sigmoid(t, steepness=8)` | Slow at extremes, sharp knee in middle |
+| `exponential(t, rate=4)` | Slow at base, fast near tip |
+| `plateau(t, stiff_fraction, soft_fraction)` | Flat zones + linear ramp |
+| `get_profile_fn(name)` | Look up profile by name string |
+| `design_from_stiffness(k_base, k_tip, area, thickness, ...)` | GradientDesign from spring constants |
+| `design_from_iso(iso_base, iso_tip, ...)` | GradientDesign from iso levels |
+
+`GradientDesign` methods:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `iso_at(t)` | float / array | Iso level at normalised position |
+| `cli_args()` | list[str] | Flags to pass to the gradient script |
+| `summary()` | — | Pretty-print design parameters |
+
+### `scaffold.geometry`
+
+Mesh dimension analysis and gradient feasibility.
+
+| Function | Description |
+|----------|-------------|
+| `model_info(path_or_mesh)` | Returns `ModelInfo` with dimensions and recommendations |
+| `cross_section_area(mesh, axis, position)` | Bounding-box area at a given position |
+| `zone_bounds(mesh, axis, n_zones)` | Divide model into N equal zones |
+| `check_gradient_feasibility(mesh, cell_size)` | Pass/fail for gradient scaffold suitability |
+
+`ModelInfo` attributes:
+
+| Attribute | Description |
+|-----------|-------------|
+| `extents` | (x, y, z) dimensions in mm |
+| `recommended_axis` | Longest axis — best gradient direction |
+| `min_dim` / `max_dim` | Smallest / largest extent in mm |
+| `volume` | Solid volume (mm³) |
+| `surface_area` | Surface area (mm²) |
+
+`ModelInfo` methods:
+
+| Method | Description |
+|--------|-------------|
+| `suggested_cell_size(n=5)` | Cell size for n cells across min dim, rounded to 0.5 mm |
+| `cross_section_area(axis)` | Bounding-box area perpendicular to axis |
+| `gradient_ok(cell_size)` | True if ≥4 cells fit across min dim and min_dim ≥16 mm |
+| `print()` | Pretty-print full summary |
+
+### `scaffold.field`
+
+Low-level voxel grid and field evaluation.
+
+```python
+X, Y, Z, delta, nx, ny, nz = build_uniform_grid(bounds, base_grid_size)
+inside, sdf = compute_inside_and_sdf(mesh, X, Y, Z)
+field = compute_tpms_gradient_field(
+    tpms_fn, X, Y, Z, axis_idx,
+    cell_size_start, cell_size_end,
+    isolevel_start, isolevel_end,
+    bounds,
+    profile_fn=sigmoid,   # optional; None = linear
+)
+field = apply_boundary_and_skin(field, inside, sdf, shell_thickness)
+```
+
+### `scaffold.mesh`
+
+```python
+mesh = load_mesh("model.stl")        # read + clean + triangulate
+v, f = mesh_to_arrays(mesh)          # float64 verts, int32 faces
+save_stl(v, f, "output.stl")
+result = postprocess(verts, faces, smooth_steps=10)
+# Steps: largest component → iterative fill_holes → Taubin smooth
+```
+
+### `scaffold.inspect`
+
+```python
+from scaffold.inspect import inspect
+
+report = inspect("output.stl", nozzle_mm=0.4, min_feature_mm=0.8)
+report.print()
+print(report.verdict)   # "PASS", "WARN", or "FAIL"
+```
+
+---
+
+## Design Workflow
+
+### Full workflow example
+
+```bash
+cd scaffolder/scripts
+
+# 1. Analyse the model
+python -c "
+from scaffold.geometry import model_info
+info = model_info('../input/finger.stl')
+info.print()
+"
+
+# 2. Compute iso levels from stiffness targets
+python -c "
+from scaffold.stiffness import stiffness_report, print_stiffness_report
+report = stiffness_report(5.0, 1.0, cross_section_mm2=20, thickness_mm=5)
+print_stiffness_report(report)
+"
+
+# 3. Generate the gradient scaffold
+python generate_gradient_scaffold.py \
+    --input ../input/finger.stl \
+    --axis y \
+    --k-base 5.0 --k-tip 1.0 \
+    --pad-area 20 --pad-thickness 5 \
+    --profile sigmoid --grid-size 80
+
+# 4. Inspect the result
+python inspect_scaffold.py ../output/finger_gyroid_gradient_y_*.stl --verbose
+```
+
+### Choosing gradient axis
+
+Use `model_info()` to find the recommended axis.  For a finger pad model where the longest dimension is along Y, use `--axis y`:
+
+- `--isolevel-start` applies at y_min (base/palm side) → set this lower (denser/stiffer)
+- `--isolevel-end` applies at y_max (fingertip side) → set this higher (more porous/softer)
+
+---
+
+## Tuning Reference
+
+| Parameter | Effect | Typical range |
+|-----------|--------|---------------|
+| `--isolevel-start` | Stiffness at base | −0.3 to 0.0 |
+| `--isolevel-end` | Stiffness at tip | 0.5 to 1.25 |
+| `--cell-size` | Lattice period | 3–8 mm |
+| `--profile sigmoid` | Smooth feel throughout | Default for finger pads |
+| `--profile exponential` | Keep base stiff, rapidly soften tip | Gripping surfaces |
+| `--profile plateau` | Discrete stiff and soft regions | Multi-zone grippers |
+| `--grid-size` | Mesh resolution | 60 (draft) – 120 (final print) |
+| `--smooth-steps` | Surface smoothness | 0–20 |
+| `--shell-thickness` | Outer skin for watertight closure | 0.5–2.0 mm |
+
+**FDM printing limits for 0.4 mm nozzle:**
+
+| Constraint | Range |
+|------------|-------|
+| Minimum cell size | ≥ 2.5 mm |
+| Maximum cell size | ≤ 15 mm |
+| Typical range | 3–8 mm |
 
 ---
 
 ## Known Limitations
 
-| Issue | Impact | Workaround |
-|-------|--------|------------|
-| Gradient scaffold outer boundary is ~1–1.5 mm inside the model surface | Printed part is ~10 % smaller than input STL | Scale up by ~1.13× in Bambu Studio (Object → Scale), or increase `--grid-size` to reduce voxel size |
-| `generate_scaffold.py` output matches model dimensions exactly | — | Prefer it for uniform designs when size matters |
-| Very small cell sizes (< 2 mm) may exceed nozzle resolution | Struts not printable | Keep cell size ≥ 2.5 mm for 0.4 mm nozzle |
-| Gradient resolution limited by `--grid-size` | Staircase artefacts | Use `--grid-size 120+` for final prints |
-| Feature size WARN on inspection report | Mesh tessellation edges (~0.56 mm) are smaller than 0.8 mm target | These are mesh artefacts, not physical features; actual struts are 3–8 mm — safe to ignore for TPU |
+| Issue | Workaround |
+|-------|------------|
+| Gradient output ~10–12 % smaller than input | Scale 1.13× in Bambu Studio |
+| Non-manifold edges cannot be auto-repaired | Use Bambu Studio repair; increase `--shell-thickness` |
+| Feature size WARN in inspect output | Expected artefact; actual struts are 3–8 mm — safe to ignore |
+| Stiffness model accuracy depends on print quality | Calibrate with one physical measurement per material/printer |
+| Sub-1 N/mm targets require small-geometry calibration | Use thinner or smaller-area pad; or softer TPU grade |
+| 4-cell minimum across shortest dimension | Model must be ≥ 20 mm in every direction for 5 mm cells |
+
+---
+
+## Running Tests
+
+```bash
+cd scaffolder
+pytest tests/ -v                          # all 186 tests (~30 s)
+pytest tests/ -m "not integration" -v     # unit tests only (~5 s)
+```
+
+| File | Coverage |
+|------|----------|
+| `test_tpms.py` | TPMS implicit functions |
+| `test_field.py` | Voxel grid and SDF |
+| `test_mesh.py` | Mesh I/O and post-process |
+| `test_inspect.py` | All printability checks |
+| `test_stiffness.py` | Gibson-Ashby model |
+| `test_profile.py` | Profile shapes and GradientDesign |
+| `test_geometry.py` | ModelInfo, zone_bounds, feasibility |
+| `test_integration.py` | End-to-end generation on real STLs |
