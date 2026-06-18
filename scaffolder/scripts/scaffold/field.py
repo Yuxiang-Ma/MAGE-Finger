@@ -70,8 +70,15 @@ def compute_tpms_gradient_field(
     isolevel_start: float,
     isolevel_end: float,
     bounds: tuple,
+    profile_fn=None,
 ) -> np.ndarray:
-    """Evaluate the TPMS implicit field with parameters varying linearly along axis_idx."""
+    """Evaluate the TPMS implicit field with parameters varying along axis_idx.
+
+    profile_fn: optional callable (t_array) -> v_array, both in [0,1].
+      Maps normalized position t to normalized gradient progress v.
+      None (default) = linear (v == t).
+      Pass profile functions from scaffold.profile for sigmoid/exponential/plateau.
+    """
     axis_coords = [X, Y, Z][axis_idx]
     axis_min = [bounds[0], bounds[2], bounds[4]][axis_idx]
     axis_max = [bounds[1], bounds[3], bounds[5]][axis_idx]
@@ -82,8 +89,11 @@ def compute_tpms_gradient_field(
     else:
         t = np.clip((axis_coords - axis_min) / axis_range, 0.0, 1.0)
 
-    cell_sizes = cell_size_start + t * (cell_size_end - cell_size_start)
-    isolevels  = isolevel_start  + t * (isolevel_end  - isolevel_start)
+    # Apply profile mapping: t (position) -> v (gradient progress)
+    v = profile_fn(t) if profile_fn is not None else t
+
+    cell_sizes = cell_size_start + v * (cell_size_end - cell_size_start)
+    isolevels  = isolevel_start  + v * (isolevel_end  - isolevel_start)
     coffs = 2.0 * np.pi / cell_sizes
 
     return tpms_fn(coffs, X, Y, Z) - isolevels

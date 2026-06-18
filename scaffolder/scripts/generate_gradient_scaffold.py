@@ -54,6 +54,7 @@ from scaffold import (
     save_stl,
 )
 from scaffold.inspect import inspect as _run_inspect
+from scaffold.profile import PROFILES, get_profile_fn
 
 AXIS_MAP = {"x": 0, "y": 1, "z": 2}
 
@@ -125,6 +126,11 @@ def main() -> None:
     parser.add_argument("--shell-thickness", type=float, default=1.0,
                         help="Outer skin thickness (mm) to close the mesh boundary. "
                              "Set to 0 to disable (leaves open edges at model surface).")
+    parser.add_argument(
+        "--profile", default="linear", choices=list(PROFILES),
+        help="Gradient profile shape: linear, sigmoid, exponential, plateau. "
+             "sigmoid is recommended for finger pads (gradual at both ends).",
+    )
 
     args = parser.parse_args()
     validate_args(args)
@@ -134,8 +140,9 @@ def main() -> None:
         print(f"[error] Input not found: {input_path}", file=sys.stderr)
         sys.exit(1)
 
-    axis_idx = AXIS_MAP[args.axis]
-    tpms_fn  = TPMS_FUNCTIONS[args.surface]
+    axis_idx   = AXIS_MAP[args.axis]
+    tpms_fn    = TPMS_FUNCTIONS[args.surface]
+    profile_fn = get_profile_fn(args.profile)
 
     if args.output is None:
         out_dir = input_path.parent.parent / "output"
@@ -143,6 +150,7 @@ def main() -> None:
             f"{args.surface}_gradient_{args.axis}"
             f"_cell{args.cell_size_start:.4g}-{args.cell_size_end:.4g}mm"
             f"_iso{args.isolevel_start:+.2f}-{args.isolevel_end:+.2f}"
+            f"_{args.profile}"
         )
         output_path = out_dir / f"{input_path.stem}_{tag}.stl"
     else:
@@ -153,6 +161,7 @@ def main() -> None:
     print(f"[info] Surface: {args.surface}  axis: {args.axis}  grid: {args.grid_size}")
     print(f"[info] Cell size : {args.cell_size_start:.4g} -> {args.cell_size_end:.4g} mm")
     print(f"[info] Isolevel  : {args.isolevel_start:+.3f} -> {args.isolevel_end:+.3f}")
+    print(f"[info] Profile   : {args.profile}")
     print(f"[info] Shell skin: {args.shell_thickness:.2f} mm")
 
     # Load mesh
@@ -183,6 +192,7 @@ def main() -> None:
         args.cell_size_start, args.cell_size_end,
         args.isolevel_start,  args.isolevel_end,
         bounds,
+        profile_fn=profile_fn,
     )
     field = apply_boundary_and_skin(tpms_field, inside, sdf, args.shell_thickness)
 
