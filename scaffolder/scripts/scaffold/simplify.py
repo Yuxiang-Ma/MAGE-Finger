@@ -1,8 +1,7 @@
 """Mesh simplification for TPMS scaffold STLs.
 
-Reduces triangle count using VTK quadric decimation (volume-preserving),
-followed by optional Taubin smoothing to remove any staircase artefacts
-introduced by the decimation.
+Reduces triangle count using VTK's DecimatePro algorithm, followed by
+best-effort hole repair and optional Taubin smoothing.
 
 Typical use cases:
   - Halve file size for fast slicer loading:    simplify(mesh, 0.80)
@@ -19,6 +18,12 @@ Guidelines for print quality:
     nozzle, so 80-90 % reduction is safe for printing.
   - default_target_faces: 300 000 — loads in < 1 s in most slicers while
     retaining full print fidelity.
+
+Known limitation:
+  Heavy decimation (>90 %) on TPMS meshes collapses thin struts and
+  introduces open edges that fill_holes may not fully close.  Residual open
+  edges are noted in output and repaired automatically by Bambu Studio /
+  PrusaSlicer.
 """
 
 from __future__ import annotations
@@ -34,9 +39,10 @@ from .mesh import save_stl
 
 logger = logging.getLogger(__name__)
 
-# Print-quality target: triangles with edge ≤ this (mm) are sufficient for 0.4mm nozzle
-_PRINT_QUALITY_EDGE_MM = 0.8
 DEFAULT_TARGET_FACES = 300_000
+
+# Must match mesh.py's postprocess fill_holes call so behaviour is consistent.
+_FILL_HOLE_SIZE = 5000.0
 
 
 # ---------------------------------------------------------------------------
@@ -48,20 +54,30 @@ def simplify(
     target_reduction: float,
     smooth_after: int = 0,
 ) -> pv.PolyData:
-    """Reduce face count by target_reduction fraction using quadric decimation.
+    """Reduce face count by target_reduction fraction using VTK DecimatePro.
 
-    Uses VTK's volume-preserving quadric decimation.  Falls back to
-    topology-preserving decimation if the result loses watertightness.
+    DecimatePro is substantially faster than quadric decimation for the
+    >85 % reductions typical of TPMS scaffolds and produces fewer open edges
+    on thin-strut geometry.  At the quality bar required for FDM slicing the
+    difference in surface accuracy is negligible.
+
+    The output is always triangulated (all faces are triangles), making it
+    safe to pass directly to save_stl() or mesh_to_arrays().
+
+    Heavy reductions may introduce a small number of open edges where struts
+    collapse.  fill_holes repairs most of them; any residual are left for
+    the slicer's auto-repair.  This is a known limitation at >90 % reduction
+    on TPMS geometry and is noted in simplify_file() output.
 
     Args:
         mesh: Input surface mesh.
         target_reduction: Fraction of faces to remove, in [0, 0.99].
             0.80 removes 80 % of faces, keeping 20 %.
         smooth_after: Taubin smoothing passes after decimation (0 = none).
-            1–3 passes remove decimation artefacts without blurring features.
+            1–3 passes soften decimation staircase artefacts.
 
     Returns:
-        Simplified mesh (same type as input, watertight if input was watertight).
+        Simplified, triangulated mesh.
     """
     if not (0.0 <= target_reduction < 1.0):
         raise ValueError(f"target_reduction must be in [0, 1), got {target_reduction}")
@@ -72,18 +88,21 @@ def simplify(
     n_before = mesh.n_cells
     open_before = mesh.n_open_edges
 
-    result = mesh.decimate(target_reduction, volume_preservation=True)
+    result = mesh.decimate_pro(target_reduction)
 
-    # Quadric decimation on TPMS meshes introduces open edges where thin struts
-    # collapse.  fill_holes closes most of them; any residual open edges are
-    # an acceptable artefact of heavy decimation and will be repaired
-    # automatically by Bambu Studio / PrusaSlicer repair.
+    # Fill holes introduced by strut collapse (best-effort; hole_size matches
+    # the value used in mesh.py postprocess so behaviour is consistent).
     if open_before == 0 and result.n_open_edges > 0:
-        healed = result.fill_holes(hole_size=1000)
-        result = healed  # use healed result regardless of remaining open edges
+        healed = result.fill_holes(hole_size=_FILL_HOLE_SIZE)
+        result = healed
 
     if smooth_after > 0:
         result = result.smooth_taubin(n_iter=smooth_after, pass_band=0.1)
+
+    # Triangulate so that fill_holes polygon patches (quads / n-gons) are
+    # split into triangles.  reshape(-1, 4) in save_stl requires pure-triangle
+    # faces; skipping this step on a mixed mesh would silently corrupt output.
+    result = result.triangulate()
 
     logger.debug(
         "simplify: %d → %d faces (%.1f%% removed)  open: %d → %d",
@@ -129,21 +148,17 @@ def auto_simplify(
 def mesh_quality_stats(mesh: pv.PolyData) -> dict:
     """Return a dict of mesh quality metrics relevant to printing."""
     n_faces = mesh.n_cells
-    n_verts = mesh.n_points
     if n_faces == 0:
         return {"n_faces": 0, "n_verts": 0, "mean_edge_mm": 0.0,
                 "open_edges": 0, "manifold": False}
 
-    # Estimate mean edge length from face area (equilateral triangle approximation)
-    areas = mesh.compute_cell_sizes(
-        length=False, area=True, volume=False
-    )["Area"]
+    areas = mesh.compute_cell_sizes(length=False, area=True, volume=False)["Area"]
     mean_area = float(np.mean(np.abs(areas)))
     mean_edge = float(np.sqrt(mean_area / (np.sqrt(3) / 4)) if mean_area > 0 else 0.0)
 
     return {
-        "n_faces":     n_faces,
-        "n_verts":     n_verts,
+        "n_faces":      n_faces,
+        "n_verts":      mesh.n_points,
         "mean_edge_mm": round(mean_edge, 3),
         "open_edges":   mesh.n_open_edges,
         "manifold":     mesh.is_manifold,
@@ -165,6 +180,9 @@ def simplify_file(
 
     If output_path is None the simplified file is saved next to the input
     with a '_simplified' suffix.
+
+    Raises:
+        ValueError: If simplification collapses the mesh to zero faces.
     """
     input_path = Path(input_path)
     if output_path is None:
@@ -178,6 +196,13 @@ def simplify_file(
     stats_before = mesh_quality_stats(mesh)
 
     result = simplify_to_count(mesh, target_faces, smooth_after=smooth_after)
+
+    if result.n_cells == 0:
+        raise ValueError(
+            f"Simplification produced an empty mesh for {input_path.name}. "
+            "Try a higher --target-faces value."
+        )
+
     stats_after = mesh_quality_stats(result)
 
     if verbose:

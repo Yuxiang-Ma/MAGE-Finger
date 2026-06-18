@@ -1,10 +1,9 @@
 """
 Reduce triangle count of one or more scaffold STL files.
 
-TPMS scaffolds generated at high grid resolution can have 3–7 million triangles.
+TPMS scaffolds generated at high grid resolution can have 3-7 million triangles.
 This script reduces them to a target face count (default: 300 000) using VTK
-quadric decimation.  The reduction is aggressive enough for fast slicer loading
-while retaining full print fidelity at 0.4 mm nozzle.
+DecimatePro, which is fast enough for batch processing of full sweep outputs.
 
 Quality notes:
   --target-faces 300000  (default)  ~94 % reduction on 5 M-face files, < 0.8 mm mean edge
@@ -13,12 +12,16 @@ Quality notes:
 
 Usage:
     python simplify_scaffolds.py ../output/pad_sweep/iso0.25/cell_2mm.stl
-    python simplify_scaffolds.py ../output/pad_sweep/**/*.stl --target-faces 500000
     python simplify_scaffolds.py ../output/pad_sweep/iso0.25/cell_2mm.stl --inplace
     python simplify_scaffolds.py ../output/ --recursive --suffix _lite
+    python simplify_scaffolds.py ../output/pad_sweep/iso0.0/ ../output/pad_sweep/iso0.25/
+
+Note on glob patterns: pass directories rather than shell globs — the script
+expands STL files from directories itself (cross-platform, including Windows).
 """
 
 import argparse
+import glob as _glob
 import sys
 import time
 from pathlib import Path
@@ -27,18 +30,34 @@ from scaffold.simplify import simplify_file, DEFAULT_TARGET_FACES
 
 
 def collect_stls(paths: list[str], recursive: bool) -> list[Path]:
-    """Expand file paths and directories into a sorted list of STL files."""
+    """Expand file paths, glob patterns, and directories into STL paths.
+
+    Deduplicates results so overlapping inputs don't double-process files.
+    """
+    seen: set[Path] = set()
     out: list[Path] = []
+
+    def _add(p: Path) -> None:
+        resolved = p.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            out.append(p)
+
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
             pattern = "**/*.stl" if recursive else "*.stl"
-            out.extend(sorted(p.glob(pattern)))
-        elif p.suffix.lower() == ".stl":
-            if p.exists():
-                out.append(p)
-            else:
-                print(f"[warn] File not found, skipping: {p}", file=sys.stderr)
+            for match in sorted(p.glob(pattern)):
+                _add(match)
+        elif p.exists() and p.suffix.lower() == ".stl":
+            _add(p)
+        elif "*" in raw or "?" in raw:
+            # Shell glob expansion (needed on Windows where the shell doesn't expand)
+            for match in sorted(Path(m) for m in _glob.glob(raw, recursive=recursive)):
+                if match.suffix.lower() == ".stl" and match.exists():
+                    _add(match)
+        elif not p.exists():
+            print(f"[warn] Path not found, skipping: {p}", file=sys.stderr)
         else:
             print(f"[warn] Not an STL file, skipping: {p}", file=sys.stderr)
     return out
@@ -101,12 +120,18 @@ def main() -> None:
         print(f"\n[{idx}/{total}] {stl.name}")
 
         if args.skip_small:
-            import pyvista as pv
-            n = pv.read(str(stl)).n_cells
-            if n <= args.target_faces:
-                print(f"  Skip: {n:,} faces already ≤ {args.target_faces:,}")
-                skipped += 1
-                continue
+            # Quick face-count check via file size heuristic first to avoid
+            # a full pv.read() on large files.  STL binary: 80+4+(50*n) bytes.
+            size = stl.stat().st_size
+            approx_faces = max(0, (size - 84) // 50)
+            if approx_faces <= args.target_faces:
+                # Confirm with exact count (file is small enough to load fast)
+                import pyvista as pv
+                n = pv.read(str(stl)).n_cells
+                if n <= args.target_faces:
+                    print(f"  Skip: {n:,} faces already ≤ {args.target_faces:,}")
+                    skipped += 1
+                    continue
 
         if args.inplace:
             dest = stl

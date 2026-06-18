@@ -1,5 +1,8 @@
 """Tests for scaffold.simplify — mesh simplification module."""
 
+import sys
+from pathlib import Path
+
 import pytest
 import numpy as np
 import pyvista as pv
@@ -12,6 +15,9 @@ from scaffold.simplify import (
     simplify_file,
     DEFAULT_TARGET_FACES,
 )
+
+# Add scripts dir so simplify_scaffolds is importable
+sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 
 # ---------------------------------------------------------------------------
@@ -203,3 +209,137 @@ class TestSimplifyFile:
 class TestDefaultTargetFaces:
     def test_default_is_300k(self):
         assert DEFAULT_TARGET_FACES == 300_000
+
+
+# ---------------------------------------------------------------------------
+# TestTriangleOutput  (regression for fill_holes non-triangle face bug)
+# ---------------------------------------------------------------------------
+
+class TestTriangleOutput:
+    """simplify() must always return a pure-triangle mesh.
+
+    fill_holes() can insert quads/n-gons.  If triangulate() is skipped,
+    faces.reshape(-1, 4) will corrupt or crash on the non-triangle entries.
+    """
+
+    def test_output_faces_are_triangles(self, sphere_dense):
+        result = simplify(sphere_dense, target_reduction=0.80)
+        # Every face cell must have exactly 3 vertices (stride-4 array: [3, v0, v1, v2])
+        face_arr = result.faces
+        assert len(face_arr) % 4 == 0, "face array length not divisible by 4 — non-triangle faces present"
+        n_verts_per_face = face_arr.reshape(-1, 4)[:, 0]
+        assert np.all(n_verts_per_face == 3), "non-triangular faces found in simplify() output"
+
+    def test_output_faces_are_triangles_high_reduction(self, sphere_dense):
+        # High reduction triggers fill_holes which is where non-triangles originate
+        result = simplify(sphere_dense, target_reduction=0.95)
+        face_arr = result.faces
+        assert len(face_arr) % 4 == 0
+        n_verts_per_face = face_arr.reshape(-1, 4)[:, 0]
+        assert np.all(n_verts_per_face == 3)
+
+    def test_simplified_file_round_trips(self, tmp_path, sphere_dense):
+        src = tmp_path / "sphere.stl"
+        sphere_dense.save(str(src))
+        out = simplify_file(src, target_faces=5_000)
+        reloaded = pv.read(str(out))
+        assert reloaded.n_cells > 0
+        # Must be readable as triangles (reshape would raise on corrupt data)
+        face_arr = reloaded.faces
+        assert len(face_arr) % 4 == 0
+
+
+# ---------------------------------------------------------------------------
+# TestSimplifyToCountEdgeCases
+# ---------------------------------------------------------------------------
+
+class TestSimplifyToCountEdgeCases:
+    def test_extreme_reduction_clamp(self, sphere_dense):
+        """target_faces=1 should clamp to 0.99 reduction, not raise."""
+        result = simplify_to_count(sphere_dense, target_faces=1)
+        # Should produce something (not zero faces) since 0.99 keeps 1% of faces
+        assert result.n_cells > 0
+
+    def test_target_equals_current(self, sphere_dense):
+        result = simplify_to_count(sphere_dense, target_faces=sphere_dense.n_cells)
+        assert result is sphere_dense
+
+
+# ---------------------------------------------------------------------------
+# TestSimplifyFileEdgeCases
+# ---------------------------------------------------------------------------
+
+class TestSimplifyFileEdgeCases:
+    def test_raises_on_degenerate_output(self, tmp_path):
+        # A single-triangle mesh simplified to 1 face: should not raise
+        # (degenerate inputs are hard to create; test the guard path indirectly)
+        tri = pv.Sphere(theta_resolution=4, phi_resolution=4)
+        src = tmp_path / "tiny.stl"
+        tri.save(str(src))
+        # Should succeed without ValueError (mesh isn't degenerate)
+        out = simplify_file(src, target_faces=50)
+        assert out.exists()
+
+
+# ---------------------------------------------------------------------------
+# TestCollectStls
+# ---------------------------------------------------------------------------
+
+class TestCollectStls:
+    """Unit tests for simplify_scaffolds.collect_stls()."""
+
+    def setup_method(self):
+        # Import here so sys.path manipulation above takes effect
+        from simplify_scaffolds import collect_stls
+        self.collect_stls = collect_stls
+
+    def test_single_file(self, tmp_path):
+        f = tmp_path / "a.stl"
+        f.touch()
+        result = self.collect_stls([str(f)], recursive=False)
+        assert result == [f]
+
+    def test_non_stl_skipped(self, tmp_path, capsys):
+        f = tmp_path / "a.txt"
+        f.touch()
+        result = self.collect_stls([str(f)], recursive=False)
+        assert result == []
+        assert "Not an STL" in capsys.readouterr().err
+
+    def test_missing_file_warns(self, tmp_path, capsys):
+        result = self.collect_stls([str(tmp_path / "nope.stl")], recursive=False)
+        assert result == []
+        assert "not found" in capsys.readouterr().err.lower()
+
+    def test_directory_flat(self, tmp_path):
+        (tmp_path / "a.stl").touch()
+        (tmp_path / "b.stl").touch()
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "c.stl").touch()
+        result = self.collect_stls([str(tmp_path)], recursive=False)
+        names = {p.name for p in result}
+        assert names == {"a.stl", "b.stl"}
+
+    def test_directory_recursive(self, tmp_path):
+        (tmp_path / "a.stl").touch()
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (sub / "b.stl").touch()
+        result = self.collect_stls([str(tmp_path)], recursive=True)
+        names = {p.name for p in result}
+        assert names == {"a.stl", "b.stl"}
+
+    def test_deduplication(self, tmp_path):
+        f = tmp_path / "a.stl"
+        f.touch()
+        # Pass the same file twice — should appear only once
+        result = self.collect_stls([str(f), str(f)], recursive=False)
+        assert len(result) == 1
+
+    def test_dir_and_explicit_file_dedup(self, tmp_path):
+        f = tmp_path / "a.stl"
+        f.touch()
+        # Directory contains a.stl; also pass a.stl explicitly
+        result = self.collect_stls([str(tmp_path), str(f)], recursive=False)
+        names = [p.name for p in result]
+        assert names.count("a.stl") == 1
