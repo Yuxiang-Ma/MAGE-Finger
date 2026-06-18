@@ -74,26 +74,13 @@ def simplify(
 
     result = mesh.decimate(target_reduction, volume_preservation=True)
 
-    # Quadric decimation on TPMS meshes commonly introduces a small number of
-    # open edges at interior junction vertices.  fill_holes closes them without
-    # changing the bulk geometry.  Only fall back to topology-preserving
-    # decimation (which guarantees no holes but may achieve less reduction) if
-    # fill_holes cannot heal the result.
+    # Quadric decimation on TPMS meshes introduces open edges where thin struts
+    # collapse.  fill_holes closes most of them; any residual open edges are
+    # an acceptable artefact of heavy decimation and will be repaired
+    # automatically by Bambu Studio / PrusaSlicer repair.
     if open_before == 0 and result.n_open_edges > 0:
         healed = result.fill_holes(hole_size=1000)
-        if healed.n_open_edges == 0:
-            result = healed
-        else:
-            logger.debug(
-                "fill_holes could not close all open edges (%d remaining); "
-                "retrying with decimate_pro(preserve_topology=True)",
-                healed.n_open_edges,
-            )
-            result = mesh.decimate_pro(
-                target_reduction,
-                preserve_topology=True,
-                boundary_vertex_deletion=False,
-            )
+        result = healed  # use healed result regardless of remaining open edges
 
     if smooth_after > 0:
         result = result.smooth_taubin(n_iter=smooth_after, pass_band=0.1)
@@ -195,14 +182,18 @@ def simplify_file(
 
     if verbose:
         ratio = stats_after["n_faces"] / max(stats_before["n_faces"], 1)
+        open_after = stats_after["open_edges"]
         print(f"[simplify] {input_path.name}")
         print(f"  Before : {stats_before['n_faces']:>9,} faces  "
               f"mean_edge={stats_before['mean_edge_mm']:.3f} mm  "
               f"open={stats_before['open_edges']}")
         print(f"  After  : {stats_after['n_faces']:>9,} faces  "
               f"mean_edge={stats_after['mean_edge_mm']:.3f} mm  "
-              f"open={stats_after['open_edges']}  "
+              f"open={open_after}  "
               f"({100*(1-ratio):.1f}% removed)")
+        if open_after > 0:
+            print(f"  [note]   {open_after} open edges — use slicer auto-repair "
+                  f"(Bambu Studio / PrusaSlicer handle this automatically)")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     v = result.points
