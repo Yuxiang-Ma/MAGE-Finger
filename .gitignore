@@ -1,5 +1,10 @@
 # Generated outputs (STL files can be hundreds of MB)
 scaffolder/output/
+metamaterial/output/
+
+# Virtual environments
+.venv/
+metamaterial/.venv/
 
 # Python
 __pycache__/

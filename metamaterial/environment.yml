@@ -1,0 +1,27 @@
+# Recommended environment for the microgen metamaterial module.
+#
+# conda-forge ships OpenCASCADE (OCP), VTK, and gmsh as ABI-matched binaries,
+# which fixes the VTK rendering DLL failures seen with the PyPI/uv venv. microgen
+# itself is not on conda-forge, so it is pip-installed on top.
+#
+# Create:
+#   conda env create -f environment.yml
+# Update:
+#   conda env update -f environment.yml --prune
+# Use:
+#   conda run -n metamaterial python scripts/generate_metamaterial.py ...
+name: metamaterial
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - cadquery          # pulls OCP (OpenCASCADE bindings)
+  - vtk
+  - gmsh
+  - pyvista
+  - numpy<2
+  - matplotlib
+  - pytest
+  - pip
+  - pip:
+      - microgen

@@ -1,0 +1,12 @@
+# Isolated environment for the microgen metamaterial module.
+# Create with:  uv venv --python 3.12 .venv
+# Install with: uv pip install --python .venv/Scripts/python.exe -r requirements.txt
+#
+# microgen pulls cadquery-ocp/gmsh/vtk transitively. numpy is pinned <2 so the
+# module stays compatible with the numpy-1 idioms used by the shared scaffolder
+# code it borrows (inspect.py / geometry.py).
+microgen
+pyvista
+numpy<2
+matplotlib   # coordinate-system preview PNG (Agg backend; no VTK needed)
+pytest
