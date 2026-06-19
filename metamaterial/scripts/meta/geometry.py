@@ -1,3 +1,7 @@
+# NOTE: This file is intentionally kept in sync with scaffolder/scripts/scaffold/geometry.py.
+# They share identical logic but live in separate environments (microgen vs PyScaffolder venvs).
+# If you edit one, edit the other. A future shared package will eliminate this duplication.
+
 """Mesh geometry analysis and preprocessing for scaffold design.
 
 Provides:

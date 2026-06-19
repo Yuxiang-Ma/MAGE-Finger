@@ -15,7 +15,8 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+if not __import__("importlib.util", fromlist=["find_spec"]).find_spec("meta"):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from meta import load_mesh  # noqa: E402
 from meta.preview import axes_summary, render_axes_png, recommended_axis  # noqa: E402

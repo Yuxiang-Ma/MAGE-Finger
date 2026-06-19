@@ -1,0 +1,31 @@
+name: Lint
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  ruff-scaffolder:
+    name: ruff (scaffolder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check scaffolder/scripts/
+      - run: ruff format --check scaffolder/scripts/
+
+  ruff-metamaterial:
+    name: ruff (metamaterial)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check metamaterial/scripts/
+      - run: ruff format --check metamaterial/scripts/

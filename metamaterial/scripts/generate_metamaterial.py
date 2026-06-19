@@ -30,8 +30,10 @@ import sys
 import time
 from pathlib import Path
 
-# Allow running as a plain script: add this dir to sys.path for `import meta`.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Fallback path so the script works without `pip install -e .`.
+# Prefer: pip install -e metamaterial/ (removes this hack entirely).
+if not __import__("importlib.util", fromlist=["find_spec"]).find_spec("meta"):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from meta import (  # noqa: E402
     SUPPORTED_SURFACES,

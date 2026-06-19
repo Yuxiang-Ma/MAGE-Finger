@@ -1,0 +1,32 @@
+name: Test (scaffolder)
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "scaffolder/**"
+      - ".github/workflows/test-scaffolder.yml"
+  pull_request:
+    paths:
+      - "scaffolder/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install pyvista numpy scipy scikit-image matplotlib pytest pymeshfix
+          # PyScaffolder is PyPI-only and numpy-1 compatible; install without deps
+          pip install --no-deps PyScaffolder
+          # Install scaffold package in editable mode (removes sys.path hacks)
+          pip install -e scaffolder/
+
+      - name: Run unit tests (skip integration)
+        run: pytest scaffolder/tests/ --ignore=scaffolder/tests/test_integration.py -q
