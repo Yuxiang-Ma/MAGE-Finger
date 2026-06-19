@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-from scaffold.simplify import simplify_file, DEFAULT_TARGET_FACES
+from scaffold.simplify import DEFAULT_TARGET_FACES, simplify_file
 
 
 def collect_stls(paths: list[str], recursive: bool) -> list[Path]:
@@ -69,35 +69,48 @@ def main() -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "inputs", nargs="+",
+        "inputs",
+        nargs="+",
         help="STL files or directories to simplify",
     )
     parser.add_argument(
-        "--target-faces", "-t", type=int, default=DEFAULT_TARGET_FACES,
+        "--target-faces",
+        "-t",
+        type=int,
+        default=DEFAULT_TARGET_FACES,
         help="Target triangle count per file",
     )
     parser.add_argument(
-        "--smooth-after", type=int, default=0,
+        "--smooth-after",
+        type=int,
+        default=0,
         help="Taubin smoothing passes after decimation (1–3 removes artefacts)",
     )
     parser.add_argument(
-        "--suffix", default="_simplified",
+        "--suffix",
+        default="_simplified",
         help="Suffix appended to output filename stem (ignored with --inplace)",
     )
     parser.add_argument(
-        "--output-dir", "-d", default=None,
+        "--output-dir",
+        "-d",
+        default=None,
         help="Write simplified files to this directory (default: same as input)",
     )
     parser.add_argument(
-        "--inplace", action="store_true",
+        "--inplace",
+        action="store_true",
         help="Overwrite input files in place (original is NOT backed up)",
     )
     parser.add_argument(
-        "--recursive", "-r", action="store_true",
+        "--recursive",
+        "-r",
+        action="store_true",
         help="When a directory is given, search recursively for STL files",
     )
     parser.add_argument(
-        "--skip-small", action="store_true",
+        "--skip-small",
+        action="store_true",
         help="Skip files that already have fewer faces than --target-faces",
     )
 
@@ -127,6 +140,7 @@ def main() -> None:
             if approx_faces <= args.target_faces:
                 # Confirm with exact count (file is small enough to load fast)
                 import pyvista as pv
+
                 n = pv.read(str(stl)).n_cells
                 if n <= args.target_faces:
                     print(f"  Skip: {n:,} faces already ≤ {args.target_faces:,}")
@@ -142,7 +156,8 @@ def main() -> None:
 
         try:
             simplify_file(
-                stl, dest,
+                stl,
+                dest,
                 target_faces=args.target_faces,
                 smooth_after=args.smooth_after,
                 verbose=True,
@@ -153,10 +168,10 @@ def main() -> None:
             failed += 1
 
     elapsed = time.time() - t_start
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Done: {succeeded} simplified, {skipped} skipped, {failed} failed")
     print(f"  Total time: {elapsed:.1f} s")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     if failed:
         sys.exit(1)

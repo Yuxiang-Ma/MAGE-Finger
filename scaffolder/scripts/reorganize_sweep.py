@@ -47,7 +47,9 @@ def main() -> None:
         dst = dst_dir / "gradient_5mm_iso-0.3to+0.9.stl"
         shutil.move(str(grad_old / "test.stl"), str(dst))
         grad_old.rmdir()
-        print(f"  gradient_iso_soft/test.stl  →  gradient_soft/gradient_5mm_iso-0.3to+0.9.stl")
+        print(
+            "  gradient_iso_soft/test.stl  →  gradient_soft/gradient_5mm_iso-0.3to+0.9.stl"
+        )
         moved += 1
 
     print(f"\n[done] Moved {moved} files.")

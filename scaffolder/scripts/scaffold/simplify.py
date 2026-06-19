@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pyvista as pv
@@ -48,6 +47,7 @@ _FILL_HOLE_SIZE = 5000.0
 # ---------------------------------------------------------------------------
 # Core simplification
 # ---------------------------------------------------------------------------
+
 
 def simplify(
     mesh: pv.PolyData,
@@ -106,9 +106,11 @@ def simplify(
 
     logger.debug(
         "simplify: %d → %d faces (%.1f%% removed)  open: %d → %d",
-        n_before, result.n_cells,
+        n_before,
+        result.n_cells,
         100.0 * (1.0 - result.n_cells / n_before),
-        open_before, result.n_open_edges,
+        open_before,
+        result.n_open_edges,
     )
     return result
 
@@ -145,23 +147,29 @@ def auto_simplify(
 # Stats helpers
 # ---------------------------------------------------------------------------
 
+
 def mesh_quality_stats(mesh: pv.PolyData) -> dict:
     """Return a dict of mesh quality metrics relevant to printing."""
     n_faces = mesh.n_cells
     if n_faces == 0:
-        return {"n_faces": 0, "n_verts": 0, "mean_edge_mm": 0.0,
-                "open_edges": 0, "manifold": False}
+        return {
+            "n_faces": 0,
+            "n_verts": 0,
+            "mean_edge_mm": 0.0,
+            "open_edges": 0,
+            "manifold": False,
+        }
 
     areas = mesh.compute_cell_sizes(length=False, area=True, volume=False)["Area"]
     mean_area = float(np.mean(np.abs(areas)))
     mean_edge = float(np.sqrt(mean_area / (np.sqrt(3) / 4)) if mean_area > 0 else 0.0)
 
     return {
-        "n_faces":      n_faces,
-        "n_verts":      mesh.n_points,
+        "n_faces": n_faces,
+        "n_verts": mesh.n_points,
         "mean_edge_mm": round(mean_edge, 3),
-        "open_edges":   mesh.n_open_edges,
-        "manifold":     mesh.is_manifold,
+        "open_edges": mesh.n_open_edges,
+        "manifold": mesh.is_manifold,
     }
 
 
@@ -169,9 +177,10 @@ def mesh_quality_stats(mesh: pv.PolyData) -> dict:
 # File-level convenience
 # ---------------------------------------------------------------------------
 
+
 def simplify_file(
     input_path: Path | str,
-    output_path: Optional[Path | str] = None,
+    output_path: Path | str | None = None,
     target_faces: int = DEFAULT_TARGET_FACES,
     smooth_after: int = 0,
     verbose: bool = True,
@@ -209,16 +218,22 @@ def simplify_file(
         ratio = stats_after["n_faces"] / max(stats_before["n_faces"], 1)
         open_after = stats_after["open_edges"]
         print(f"[simplify] {input_path.name}")
-        print(f"  Before : {stats_before['n_faces']:>9,} faces  "
-              f"mean_edge={stats_before['mean_edge_mm']:.3f} mm  "
-              f"open={stats_before['open_edges']}")
-        print(f"  After  : {stats_after['n_faces']:>9,} faces  "
-              f"mean_edge={stats_after['mean_edge_mm']:.3f} mm  "
-              f"open={open_after}  "
-              f"({100*(1-ratio):.1f}% removed)")
+        print(
+            f"  Before : {stats_before['n_faces']:>9,} faces  "
+            f"mean_edge={stats_before['mean_edge_mm']:.3f} mm  "
+            f"open={stats_before['open_edges']}"
+        )
+        print(
+            f"  After  : {stats_after['n_faces']:>9,} faces  "
+            f"mean_edge={stats_after['mean_edge_mm']:.3f} mm  "
+            f"open={open_after}  "
+            f"({100 * (1 - ratio):.1f}% removed)"
+        )
         if open_after > 0:
-            print(f"  [note]   {open_after} open edges — use slicer auto-repair "
-                  f"(Bambu Studio / PrusaSlicer handle this automatically)")
+            print(
+                f"  [note]   {open_after} open edges — use slicer auto-repair "
+                f"(Bambu Studio / PrusaSlicer handle this automatically)"
+            )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     v = result.points

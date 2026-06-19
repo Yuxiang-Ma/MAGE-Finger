@@ -15,25 +15,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
 
 import numpy as np
 import pyvista as pv
 
 AXIS_NAMES = ["x", "y", "z"]
-MIN_CELLS_FOR_GRADIENT = 4    # minimum full cell periods across smallest dimension
-MIN_DIM_FOR_GRADIENT   = 16.0  # mm
+MIN_CELLS_FOR_GRADIENT = 4  # minimum full cell periods across smallest dimension
+MIN_DIM_FOR_GRADIENT = 16.0  # mm
 
 
 @dataclass
 class ModelInfo:
     """Geometry summary relevant to scaffold and gradient design."""
-    path: Optional[Path]
-    extents: tuple[float, float, float]   # (x, y, z) in mm
-    bounds: tuple                          # (xmin, xmax, ymin, ymax, zmin, zmax)
-    volume: float                          # solid volume mm3
-    surface_area: float                    # surface area mm2
-    recommended_axis: str                  # longest axis: "x", "y", or "z"
+
+    path: Path | None
+    extents: tuple[float, float, float]  # (x, y, z) in mm
+    bounds: tuple  # (xmin, xmax, ymin, ymax, zmin, zmax)
+    volume: float  # solid volume mm3
+    surface_area: float  # surface area mm2
+    recommended_axis: str  # longest axis: "x", "y", or "z"
     min_dim: float
     max_dim: float
 
@@ -42,7 +42,7 @@ class ModelInfo:
         raw = self.min_dim / n_cells
         return round(raw * 2) / 2
 
-    def cross_section_area(self, axis: Optional[str] = None) -> float:
+    def cross_section_area(self, axis: str | None = None) -> float:
         """Bounding-box cross-sectional area (mm²) perpendicular to the gradient axis."""
         ax = axis or self.recommended_axis
         ax_idx = AXIS_NAMES.index(ax)
@@ -50,32 +50,42 @@ class ModelInfo:
         dims.pop(ax_idx)
         return dims[0] * dims[1]
 
-    def gradient_ok(self, cell_size: Optional[float] = None) -> bool:
+    def gradient_ok(self, cell_size: float | None = None) -> bool:
         """True if model is large enough for reliable gradient scaffold generation."""
         cs = cell_size or self.suggested_cell_size()
-        return (self.min_dim / cs) >= MIN_CELLS_FOR_GRADIENT and self.min_dim >= MIN_DIM_FOR_GRADIENT
+        return (
+            self.min_dim / cs
+        ) >= MIN_CELLS_FOR_GRADIENT and self.min_dim >= MIN_DIM_FOR_GRADIENT
 
     def print(self) -> None:
         name = self.path.name if self.path else "(unnamed mesh)"
-        print(f"\n{'='*54}")
+        print(f"\n{'=' * 54}")
         print(f"  Model: {name}")
-        print(f"{'='*54}")
-        print(f"  Extents  : {self.extents[0]:.1f} x {self.extents[1]:.1f} x {self.extents[2]:.1f} mm")
-        print(f"  Volume   : {self.volume:.1f} mm3   Surface: {self.surface_area:.1f} mm2")
+        print(f"{'=' * 54}")
+        print(
+            f"  Extents  : {self.extents[0]:.1f} x {self.extents[1]:.1f} x {self.extents[2]:.1f} mm"
+        )
+        print(
+            f"  Volume   : {self.volume:.1f} mm3   Surface: {self.surface_area:.1f} mm2"
+        )
         print(f"  Min dim  : {self.min_dim:.1f} mm   Max dim : {self.max_dim:.1f} mm")
         print(f"  Recommended gradient axis : {self.recommended_axis.upper()}")
         cs = self.suggested_cell_size()
         cs_area = self.cross_section_area()
-        print(f"  Cross-section (perp. {self.recommended_axis.upper()}) : {cs_area:.1f} mm2")
+        print(
+            f"  Cross-section (perp. {self.recommended_axis.upper()}) : {cs_area:.1f} mm2"
+        )
         ok = self.gradient_ok(cs)
         status = "OK" if ok else "TOO SMALL (use uniform scaffold or larger model)"
         print(f"  Gradient feasibility       : {status}")
-        print(f"  Suggested cell size        : {cs:.1f} mm  "
-              f"({self.min_dim/cs:.1f} cells across min dim)")
-        print(f"{'='*54}\n")
+        print(
+            f"  Suggested cell size        : {cs:.1f} mm  "
+            f"({self.min_dim / cs:.1f} cells across min dim)"
+        )
+        print(f"{'=' * 54}\n")
 
 
-def model_info(mesh_or_path: Union[pv.PolyData, Path, str]) -> ModelInfo:
+def model_info(mesh_or_path: pv.PolyData | Path | str) -> ModelInfo:
     """Load a mesh (or accept an existing PolyData) and return its ModelInfo."""
     if isinstance(mesh_or_path, (str, Path)):
         path = Path(mesh_or_path)
@@ -85,7 +95,7 @@ def model_info(mesh_or_path: Union[pv.PolyData, Path, str]) -> ModelInfo:
         path = None
 
     b = mesh.bounds
-    extents = (b[1]-b[0], b[3]-b[2], b[5]-b[4])
+    extents = (b[1] - b[0], b[3] - b[2], b[5] - b[4])
     dims = list(extents)
     recommended_axis = AXIS_NAMES[dims.index(max(dims))]
 
@@ -123,7 +133,9 @@ def cross_section_area(
     hi_origin[ax_idx] = position + half
 
     try:
-        slab = mesh.clip(normal=-normal, origin=lo_origin).clip(normal=normal, origin=hi_origin)
+        slab = mesh.clip(normal=-normal, origin=lo_origin).clip(
+            normal=normal, origin=hi_origin
+        )
     except Exception:
         return 0.0
 
@@ -131,7 +143,7 @@ def cross_section_area(
         return 0.0
 
     b = slab.bounds
-    dims = [b[1]-b[0], b[3]-b[2], b[5]-b[4]]
+    dims = [b[1] - b[0], b[3] - b[2], b[5] - b[4]]
     dims.pop(ax_idx)
     return float(dims[0] * dims[1])
 
@@ -148,12 +160,12 @@ def zone_bounds(
     b = mesh.bounds
     ax_min = [b[0], b[2], b[4]][AXIS_NAMES.index(axis)]
     ax_max = [b[1], b[3], b[5]][AXIS_NAMES.index(axis)]
-    edges  = np.linspace(ax_min, ax_max, n_zones + 1)
-    return [(float(edges[i]), float(edges[i+1])) for i in range(n_zones)]
+    edges = np.linspace(ax_min, ax_max, n_zones + 1)
+    return [(float(edges[i]), float(edges[i + 1])) for i in range(n_zones)]
 
 
 def check_gradient_feasibility(
-    mesh_or_path: Union[pv.PolyData, Path, str],
+    mesh_or_path: pv.PolyData | Path | str,
     cell_size: float = 5.0,
     verbose: bool = True,
 ) -> bool:

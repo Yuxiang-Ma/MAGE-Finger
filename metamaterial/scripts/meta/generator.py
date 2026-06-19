@@ -13,9 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
-import numpy as np
 import pyvista as pv
 from microgen import Infill
 
@@ -27,12 +25,13 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class GenResult:
     """Result of a metamaterial generation run."""
+
     mesh: pv.PolyData
     surface: str
     part_type: str
     cell_size: float
-    relative_density: float   # solid volume / input solid volume
-    offset: Optional[float]
+    relative_density: float  # solid volume / input solid volume
+    offset: float | None
     open_edges: int
 
 
@@ -48,8 +47,8 @@ def generate(
     input_mesh: pv.PolyData,
     surface: str = "gyroid",
     cell_size: float = 5.0,
-    density: Optional[float] = None,
-    offset: Optional[float] = None,
+    density: float | None = None,
+    offset: float | None = None,
     part_type: str = "sheet",
     resolution: int = 20,
 ) -> GenResult:
@@ -97,7 +96,11 @@ def generate(
     rho = relative_density(out, input_mesh)
     logger.info(
         "Generated %s (%s): cell=%.2fmm density~%.3f open_edges=%d",
-        surface, pt, cell_size, rho, out.n_open_edges,
+        surface,
+        pt,
+        cell_size,
+        rho,
+        out.n_open_edges,
     )
     return GenResult(
         mesh=out,

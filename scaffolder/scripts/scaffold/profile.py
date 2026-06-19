@@ -19,17 +19,17 @@ Supported profiles:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 import numpy as np
 
-from .stiffness import iso_for_spring_constant, stiffness_report, solid_fraction
-
+from .stiffness import solid_fraction, stiffness_report
 
 # ---------------------------------------------------------------------------
 # Profile functions: t ∈ [0,1] -> v ∈ [0,1]
 # ---------------------------------------------------------------------------
+
 
 def linear(t: np.ndarray, **_) -> np.ndarray:
     """Uniform gradient — iso changes at a constant rate along the axis."""
@@ -45,7 +45,7 @@ def sigmoid(t: np.ndarray, steepness: float = 8.0, **_) -> np.ndarray:
     x = steepness * (t - 0.5)
     s = 1.0 / (1.0 + np.exp(-x))
     # Normalize so s(0)=0 and s(1)=1
-    s0 = 1.0 / (1.0 + np.exp( steepness * 0.5))
+    s0 = 1.0 / (1.0 + np.exp(steepness * 0.5))
     s1 = 1.0 / (1.0 + np.exp(-steepness * 0.5))
     return (s - s0) / (s1 - s0)
 
@@ -74,19 +74,20 @@ def plateau(
     """
     t = np.clip(np.asarray(t, dtype=float), 0.0, 1.0)
     trans_start = stiff_fraction
-    trans_end   = 1.0 - soft_fraction
-    span        = max(trans_end - trans_start, 1e-9)
+    trans_end = 1.0 - soft_fraction
+    span = max(trans_end - trans_start, 1e-9)
     return np.where(
-        t < trans_start, 0.0,
+        t < trans_start,
+        0.0,
         np.where(t > trans_end, 1.0, (t - trans_start) / span),
     ).astype(float)
 
 
 PROFILES: dict[str, Callable] = {
-    "linear":      linear,
-    "sigmoid":     sigmoid,
+    "linear": linear,
+    "sigmoid": sigmoid,
     "exponential": exponential,
-    "plateau":     plateau,
+    "plateau": plateau,
 }
 
 
@@ -101,6 +102,7 @@ def get_profile_fn(name: str) -> Callable:
 # GradientDesign: high-level design object
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class GradientDesign:
     """Complete description of a stiffness-gradient scaffold.
@@ -114,13 +116,14 @@ class GradientDesign:
         k_tip:     Target spring constant at tip  (N/mm), for reference.
         notes:     Design notes.
     """
-    iso_base:  float
-    iso_tip:   float
+
+    iso_base: float
+    iso_tip: float
     cell_size: float = 5.0
-    profile:   str   = "sigmoid"
-    k_base:    Optional[float] = None
-    k_tip:     Optional[float] = None
-    notes:     str   = ""
+    profile: str = "sigmoid"
+    k_base: float | None = None
+    k_tip: float | None = None
+    notes: str = ""
 
     def profile_fn(self) -> Callable:
         return get_profile_fn(self.profile)
@@ -133,20 +136,29 @@ class GradientDesign:
     def cli_args(self) -> list[str]:
         """Command-line arguments for generate_gradient_scaffold.py."""
         return [
-            "--isolevel-start", f"{self.iso_base:.3f}",
-            "--isolevel-end",   f"{self.iso_tip:.3f}",
-            "--cell-size-start", f"{self.cell_size:.4g}",
-            "--cell-size-end",   f"{self.cell_size:.4g}",
-            "--profile",         self.profile,
+            "--isolevel-start",
+            f"{self.iso_base:.3f}",
+            "--isolevel-end",
+            f"{self.iso_tip:.3f}",
+            "--cell-size-start",
+            f"{self.cell_size:.4g}",
+            "--cell-size-end",
+            f"{self.cell_size:.4g}",
+            "--profile",
+            self.profile,
         ]
 
     def summary(self) -> None:
-        print(f"\n{'='*52}")
-        print(f"  Gradient Design Summary")
-        print(f"{'='*52}")
+        print(f"\n{'=' * 52}")
+        print("  Gradient Design Summary")
+        print(f"{'=' * 52}")
         print(f"  Profile   : {self.profile}")
-        print(f"  Iso base  : {self.iso_base:+.3f}  ({solid_fraction(self.iso_base):.0%} solid)")
-        print(f"  Iso tip   : {self.iso_tip:+.3f}  ({solid_fraction(self.iso_tip):.0%} solid)")
+        print(
+            f"  Iso base  : {self.iso_base:+.3f}  ({solid_fraction(self.iso_base):.0%} solid)"
+        )
+        print(
+            f"  Iso tip   : {self.iso_tip:+.3f}  ({solid_fraction(self.iso_tip):.0%} solid)"
+        )
         print(f"  Cell size : {self.cell_size:.4g} mm")
         if self.k_base is not None:
             print(f"  k_base    : {self.k_base:.2f} N/mm")
@@ -154,14 +166,15 @@ class GradientDesign:
             print(f"  k_tip     : {self.k_tip:.2f} N/mm")
         if self.notes:
             print(f"  Notes     : {self.notes}")
-        print(f"\n  CLI args  :")
-        print(f"    " + " ".join(self.cli_args()))
-        print(f"{'='*52}\n")
+        print("\n  CLI args  :")
+        print("    " + " ".join(self.cli_args()))
+        print(f"{'=' * 52}\n")
 
 
 # ---------------------------------------------------------------------------
 # Factory functions
 # ---------------------------------------------------------------------------
+
 
 def design_from_stiffness(
     k_base: float,
@@ -188,7 +201,9 @@ def design_from_stiffness(
     Returns:
         GradientDesign with iso_base and iso_tip computed from Gibson-Ashby.
     """
-    report = stiffness_report(k_base, k_tip, cross_section_mm2, thickness_mm, material, surface)
+    report = stiffness_report(
+        k_base, k_tip, cross_section_mm2, thickness_mm, material, surface
+    )
     notes = (
         f"Gibson-Ashby n=2 | "
         f"{report['solid_fraction_base']:.0%} -> {report['solid_fraction_tip']:.0%} solid | "

@@ -37,13 +37,12 @@ from pathlib import Path
 
 import numpy as np
 import PyScaffolder
-
 from scaffold import SUPPORTED_SURFACES, load_mesh, mesh_to_arrays, save_stl
-
 
 # ---------------------------------------------------------------------------
 # PyScaffolder parameter helpers
 # ---------------------------------------------------------------------------
+
 
 def build_params(
     surface: str,
@@ -64,7 +63,7 @@ def build_params(
     p.qsim_percent = qsim
     p.shell = shell
     p.verbose = verbose
-    p.is_intersect = True   # clip scaffold to input mesh
+    p.is_intersect = True  # clip scaffold to input mesh
     return p
 
 
@@ -90,10 +89,12 @@ def find_isolevel_for_porosity(
 
     for i in range(22):
         mid = (lo + hi) / 2.0
-        p = build_params(surface, unit_cell_size, mid, grid_size_probe, 0, 0.0, 0.0, False)
+        p = build_params(
+            surface, unit_cell_size, mid, grid_size_probe, 0, 0.0, 0.0, False
+        )
         result = PyScaffolder.generate_scaffold(v, f, p)
         porosity = result.porosity
-        print(f"  iter {i+1:2d}: isolevel={mid:+.4f}  porosity={porosity:.4f}")
+        print(f"  iter {i + 1:2d}: isolevel={mid:+.4f}  porosity={porosity:.4f}")
         if abs(porosity - target_porosity) < tol:
             break
         if porosity > target_porosity:
@@ -107,12 +108,13 @@ def find_isolevel_for_porosity(
 
 def _progress(pct: int) -> None:
     filled = pct // 2
-    print(f"\r  [{'#'*filled}{'-'*(50-filled)}] {pct:3d}%", end="", flush=True)
+    print(f"\r  [{'#' * filled}{'-' * (50 - filled)}] {pct:3d}%", end="", flush=True)
 
 
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 def validate_args(args: argparse.Namespace) -> None:
     errors = []
@@ -136,6 +138,7 @@ def validate_args(args: argparse.Namespace) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate uniform TPMS scaffold from STL",
@@ -143,51 +146,83 @@ def main() -> None:
     )
     parser.add_argument("--input", "-i", required=True, help="Input STL file")
     parser.add_argument(
-        "--output", "-o", default=None,
+        "--output",
+        "-o",
+        default=None,
         help="Output STL (default: output/<stem>_<surface>_cell<size>mm.stl)",
     )
     parser.add_argument(
-        "--surface", "-s", default="gyroid", choices=SUPPORTED_SURFACES,
+        "--surface",
+        "-s",
+        default="gyroid",
+        choices=SUPPORTED_SURFACES,
         help="TPMS surface type",
     )
     parser.add_argument(
-        "--unit-cell-size", "-u", type=float, default=5.0,
+        "--unit-cell-size",
+        "-u",
+        type=float,
+        default=5.0,
         help="Unit cell size in mm — smaller = finer lattice = stiffer",
     )
     parser.add_argument(
-        "--isolevel", type=float, default=0.0,
+        "--isolevel",
+        type=float,
+        default=0.0,
         help="Isosurface level: negative = denser/stiffer; positive = more porous/softer",
     )
     parser.add_argument(
-        "--porosity", type=float, default=None,
+        "--porosity",
+        type=float,
+        default=None,
         help="Target void fraction 0-1 (overrides --isolevel; runs binary search)",
     )
     parser.add_argument(
-        "--infill-ratio", type=float, default=None,
+        "--infill-ratio",
+        type=float,
+        default=None,
         help="Target solid fraction 0-1, e.g. 0.5 = 50 %% infill (overrides --isolevel)",
     )
     parser.add_argument(
-        "--grid-size", "-g", type=int, default=100,
+        "--grid-size",
+        "-g",
+        type=int,
+        default=100,
         help="Voxelisation resolution — higher = more accurate, slower (150+ for final print)",
     )
     parser.add_argument(
-        "--smooth-steps", type=int, default=3,
+        "--smooth-steps",
+        type=int,
+        default=3,
         help="Laplacian smoothing iterations (0 = none)",
     )
     parser.add_argument(
-        "--qsim", type=float, default=0.0,
+        "--qsim",
+        type=float,
+        default=0.0,
         help="Quadric mesh simplification 0-1 (0 = off, 0.5 = halve face count)",
     )
     parser.add_argument(
-        "--shell", type=float, default=0.0,
+        "--shell",
+        type=float,
+        default=0.0,
         help="Outer shell thickness in mm added around the scaffold (0 = none)",
     )
-    parser.add_argument("--wall-layers", type=int, default=0, metavar="N",
-                        help="Number of solid outer-wall layers (0 = no shell). "
-                             "Thickness = N × --layer-height. Overrides --shell when > 0.")
-    parser.add_argument("--layer-height", type=float, default=0.2,
-                        help="Layer height in mm for wall thickness calculation "
-                             "(default 0.2 mm = Bambu TPU standard)")
+    parser.add_argument(
+        "--wall-layers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of solid outer-wall layers (0 = no shell). "
+        "Thickness = N × --layer-height. Overrides --shell when > 0.",
+    )
+    parser.add_argument(
+        "--layer-height",
+        type=float,
+        default=0.2,
+        help="Layer height in mm for wall thickness calculation "
+        "(default 0.2 mm = Bambu TPU standard)",
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
 
     args = parser.parse_args()
@@ -202,9 +237,9 @@ def main() -> None:
         out_dir = input_path.parent.parent / "output"
         tag = f"{args.surface}_cell{args.unit_cell_size:.4g}mm"
         if args.infill_ratio is not None:
-            tag += f"_infill{args.infill_ratio*100:.0f}pct"
+            tag += f"_infill{args.infill_ratio * 100:.0f}pct"
         elif args.porosity is not None:
-            tag += f"_porosity{args.porosity*100:.0f}pct"
+            tag += f"_porosity{args.porosity * 100:.0f}pct"
         output_path = out_dir / f"{input_path.stem}_{tag}.stl"
     else:
         output_path = Path(args.output)
@@ -212,17 +247,19 @@ def main() -> None:
     mesh = load_mesh(input_path)
     v, f = mesh_to_arrays(mesh)
     b = mesh.bounds
-    extents = [b[1]-b[0], b[3]-b[2], b[5]-b[4]]
+    extents = [b[1] - b[0], b[3] - b[2], b[5] - b[4]]
 
     print(f"[info] Input  : {input_path}")
     print(f"[info] Output : {output_path}")
     print(f"[info] Surface: {args.surface}")
     print(f"[info] Extents: {extents[0]:.1f} x {extents[1]:.1f} x {extents[2]:.1f} mm")
-    print(f"[info] Unit cell size: {args.unit_cell_size} mm  "
-          f"-> cells per axis: "
-          f"{extents[0]/args.unit_cell_size:.1f} x "
-          f"{extents[1]/args.unit_cell_size:.1f} x "
-          f"{extents[2]/args.unit_cell_size:.1f}")
+    print(
+        f"[info] Unit cell size: {args.unit_cell_size} mm  "
+        f"-> cells per axis: "
+        f"{extents[0] / args.unit_cell_size:.1f} x "
+        f"{extents[1] / args.unit_cell_size:.1f} x "
+        f"{extents[2] / args.unit_cell_size:.1f}"
+    )
 
     target_porosity = None
     if args.infill_ratio is not None:
@@ -241,13 +278,21 @@ def main() -> None:
         args.wall_layers * args.layer_height if args.wall_layers > 0 else args.shell
     )
     if args.wall_layers > 0:
-        print(f"[info] Shell  : {args.wall_layers} layers × {args.layer_height} mm = {effective_shell:.2f} mm")
+        print(
+            f"[info] Shell  : {args.wall_layers} layers × {args.layer_height} mm = {effective_shell:.2f} mm"
+        )
     elif effective_shell > 0:
         print(f"[info] Shell  : {effective_shell:.2f} mm")
 
     params = build_params(
-        args.surface, args.unit_cell_size, isolevel,
-        args.grid_size, args.smooth_steps, args.qsim, effective_shell, args.verbose,
+        args.surface,
+        args.unit_cell_size,
+        isolevel,
+        args.grid_size,
+        args.smooth_steps,
+        args.qsim,
+        effective_shell,
+        args.verbose,
     )
     print(
         f"[info] Generating (grid={args.grid_size}, isolevel={isolevel:+.4f}, "
@@ -267,7 +312,9 @@ def main() -> None:
         sys.exit(1)
 
     print(f"[done] Time  : {elapsed:.1f} s")
-    print(f"[done] Porosity          : {result.porosity:.3f}  ({result.porosity*100:.1f} %)")
+    print(
+        f"[done] Porosity          : {result.porosity:.3f}  ({result.porosity * 100:.1f} %)"
+    )
     print(f"[done] Surface area ratio: {result.surface_area_ratio:.3f}")
     print(f"[done] Vertices : {result.v.shape[0]:,}")
     print(f"[done] Faces    : {result.f.shape[0]:,}")

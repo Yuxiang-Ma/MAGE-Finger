@@ -14,7 +14,6 @@ Rendering uses pyvista/VTK off-screen, which works in the conda-forge env.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pyvista as pv
@@ -37,9 +36,9 @@ def recommended_axis(mesh: pv.PolyData) -> str:
 
 def axes_summary(
     mesh: pv.PolyData,
-    axis: Optional[str] = None,
-    density_start: Optional[float] = None,
-    density_end: Optional[float] = None,
+    axis: str | None = None,
+    density_start: float | None = None,
+    density_end: float | None = None,
 ) -> str:
     """Human-readable description of the model frame and gradient mapping."""
     rng = _ranges(mesh)
@@ -75,10 +74,10 @@ def axes_summary(
 def render_axes_png(
     mesh: pv.PolyData,
     out_png: Path,
-    axis: Optional[str] = None,
-    density_start: Optional[float] = None,
-    density_end: Optional[float] = None,
-    title: Optional[str] = None,
+    axis: str | None = None,
+    density_start: float | None = None,
+    density_end: float | None = None,
+    title: str | None = None,
 ) -> Path:
     """Render a labelled coordinate preview to PNG using pyvista (off-screen).
 
@@ -102,25 +101,38 @@ def render_axes_png(
     for i, name in enumerate(AXIS_NAMES):
         d = np.zeros(3)
         d[i] = 1.0
-        pl.add_mesh(_pv.Arrow(start=base, direction=d, scale=L), color=AXIS_COLORS[name])
+        pl.add_mesh(
+            _pv.Arrow(start=base, direction=d, scale=L), color=AXIS_COLORS[name]
+        )
         tip = base + d * L * 1.12
         pl.add_point_labels(
-            [tip], [name.upper()], text_color=AXIS_COLORS[name], font_size=22,
-            shape=None, show_points=False, always_visible=True,
+            [tip],
+            [name.upper()],
+            text_color=AXIS_COLORS[name],
+            font_size=22,
+            shape=None,
+            show_points=False,
+            always_visible=True,
         )
 
     # gradient direction line + start/end labels
     if axis is not None:
         i = AXIS_NAMES.index(axis)
         lo, hi = rng[i]
-        start = np.array(mesh.center, dtype=float); start[i] = lo
-        end = np.array(mesh.center, dtype=float); end[i] = hi
+        start = np.array(mesh.center, dtype=float)
+        start[i] = lo
+        end = np.array(mesh.center, dtype=float)
+        end[i] = hi
         pl.add_mesh(_pv.Line(start, end), color="black", line_width=4)
         s_lab = f"start{'' if density_start is None else f' d={density_start:.2g}'} ({axis}={lo:.1f})"
         e_lab = f"end{'' if density_end is None else f' d={density_end:.2g}'} ({axis}={hi:.1f})"
         pl.add_point_labels(
-            [start, end], [s_lab, e_lab], font_size=12,
-            shape=None, show_points=True, always_visible=True,
+            [start, end],
+            [s_lab, e_lab],
+            font_size=12,
+            shape=None,
+            show_points=True,
+            always_visible=True,
         )
 
     pl.add_text(title or "Coordinate system & gradient direction", font_size=10)
@@ -134,4 +146,10 @@ def render_axes_png(
     return out_png
 
 
-__all__ = ["axes_summary", "recommended_axis", "render_axes_png", "AXIS_COLORS", "AXIS_NAMES"]
+__all__ = [
+    "axes_summary",
+    "recommended_axis",
+    "render_axes_png",
+    "AXIS_COLORS",
+    "AXIS_NAMES",
+]

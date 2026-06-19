@@ -28,18 +28,18 @@ if not __import__("importlib.util", fromlist=["find_spec"]).find_spec("meta"):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from meta import (  # noqa: E402
-    SUPPORTED_SURFACES,
+    AXIS_INDEX,
+    DEFAULT_LAYER_HEIGHT,
     PART_TYPES,
     PROFILES,
-    AXIS_INDEX,
-    load_mesh,
-    save_stl,
-    postprocess,
-    generate_gradient,
-    effective_modulus,
-    DEFAULT_LAYER_HEIGHT,
-    shell_thickness,
+    SUPPORTED_SURFACES,
     add_shell,
+    effective_modulus,
+    generate_gradient,
+    load_mesh,
+    postprocess,
+    save_stl,
+    shell_thickness,
 )
 
 
@@ -47,7 +47,10 @@ def validate_args(args: argparse.Namespace) -> None:
     errors = []
     if args.unit_cell_size <= 0:
         errors.append("--unit-cell-size must be > 0")
-    for name, d in (("--density-start", args.density_start), ("--density-end", args.density_end)):
+    for name, d in (
+        ("--density-start", args.density_start),
+        ("--density-end", args.density_end),
+    ):
         if not (0 < d < 1):
             errors.append(f"{name} must be in (0, 1)")
     if args.resolution < 8:
@@ -64,35 +67,69 @@ def main() -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--input", "-i", required=True, help="Input STL file")
-    parser.add_argument("--output", "-o", default=None, help="Output STL (auto if omitted)")
+    parser.add_argument(
+        "--output", "-o", default=None, help="Output STL (auto if omitted)"
+    )
     parser.add_argument("--surface", "-s", default="gyroid", choices=SUPPORTED_SURFACES)
-    parser.add_argument("--part-type", default="sheet", choices=PART_TYPES,
-                        help="sheet = stiffer; skeletal = softer at equal density")
-    parser.add_argument("--axis", "-a", default="z", choices=list(AXIS_INDEX),
-                        help="Gradient direction")
-    parser.add_argument("--unit-cell-size", "-u", type=float, default=5.0,
-                        help="Unit cell size in mm (fixed along the part)")
-    parser.add_argument("--density-start", type=float, default=0.45,
-                        help="Relative density at axis minimum (stiff end)")
-    parser.add_argument("--density-end", type=float, default=0.15,
-                        help="Relative density at axis maximum (soft end)")
-    parser.add_argument("--profile", default="linear", choices=list(PROFILES),
-                        help="Gradient profile shape")
+    parser.add_argument(
+        "--part-type",
+        default="sheet",
+        choices=PART_TYPES,
+        help="sheet = stiffer; skeletal = softer at equal density",
+    )
+    parser.add_argument(
+        "--axis", "-a", default="z", choices=list(AXIS_INDEX), help="Gradient direction"
+    )
+    parser.add_argument(
+        "--unit-cell-size",
+        "-u",
+        type=float,
+        default=5.0,
+        help="Unit cell size in mm (fixed along the part)",
+    )
+    parser.add_argument(
+        "--density-start",
+        type=float,
+        default=0.45,
+        help="Relative density at axis minimum (stiff end)",
+    )
+    parser.add_argument(
+        "--density-end",
+        type=float,
+        default=0.15,
+        help="Relative density at axis maximum (soft end)",
+    )
+    parser.add_argument(
+        "--profile",
+        default="linear",
+        choices=list(PROFILES),
+        help="Gradient profile shape",
+    )
     parser.add_argument("--resolution", "-g", type=int, default=20)
     parser.add_argument("--smooth-steps", type=int, default=0)
     parser.add_argument("--material", default="85A")
-    parser.add_argument("--wall-layers", type=int, default=0, metavar="N",
-                        help="Number of solid outer-wall layers (0 = no shell). "
-                             "Thickness = N × --layer-height")
-    parser.add_argument("--layer-height", type=float, default=DEFAULT_LAYER_HEIGHT,
-                        help=f"Layer height in mm for wall thickness calculation "
-                             f"(default {DEFAULT_LAYER_HEIGHT} mm = Bambu TPU standard)")
+    parser.add_argument(
+        "--wall-layers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of solid outer-wall layers (0 = no shell). "
+        "Thickness = N × --layer-height",
+    )
+    parser.add_argument(
+        "--layer-height",
+        type=float,
+        default=DEFAULT_LAYER_HEIGHT,
+        help=f"Layer height in mm for wall thickness calculation "
+        f"(default {DEFAULT_LAYER_HEIGHT} mm = Bambu TPU standard)",
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
     validate_args(args)
 
     logging.basicConfig(
-        level=logging.INFO if args.verbose else logging.WARNING, format="%(message)s",
+        level=logging.INFO if args.verbose else logging.WARNING,
+        format="%(message)s",
     )
 
     input_path = Path(args.input)
@@ -118,9 +155,13 @@ def main() -> None:
     print(f"[info] Input    : {input_path}")
     print(f"[info] Output   : {output_path}")
     print(f"[info] Surface  : {args.surface}  ({args.part_type})")
-    print(f"[info] Extents  : {extents[0]:.1f} x {extents[1]:.1f} x {extents[2]:.1f} mm")
-    print(f"[info] Gradient : density {args.density_start} -> {args.density_end} "
-          f"along {args.axis}  (profile={args.profile})")
+    print(
+        f"[info] Extents  : {extents[0]:.1f} x {extents[1]:.1f} x {extents[2]:.1f} mm"
+    )
+    print(
+        f"[info] Gradient : density {args.density_start} -> {args.density_end} "
+        f"along {args.axis}  (profile={args.profile})"
+    )
     print(f"[info] Cell size: {args.unit_cell_size} mm")
     print(f"[info] Generating (resolution={args.resolution})...")
 
@@ -140,7 +181,9 @@ def main() -> None:
 
     wall_t = shell_thickness(args.wall_layers, args.layer_height)
     if wall_t > 0.0:
-        print(f"[info] Shell    : {args.wall_layers} layers × {args.layer_height} mm = {wall_t:.2f} mm")
+        print(
+            f"[info] Shell    : {args.wall_layers} layers × {args.layer_height} mm = {wall_t:.2f} mm"
+        )
         out = add_shell(out, mesh, wall_t)
 
     elapsed = time.time() - t0
@@ -155,8 +198,10 @@ def main() -> None:
     print(f"[done] Avg rel. density  : {result.relative_density:.3f}")
     print(f"[done] Open edges        : {out.n_open_edges}")
     print(f"[done] Vertices / Faces  : {out.n_points:,} / {out.n_cells:,}")
-    print(f"[done] Est. E_eff {args.material} ({args.part_type}): "
-          f"{e_start:.3f} -> {e_end:.3f} MPa  (stiff end -> soft end)")
+    print(
+        f"[done] Est. E_eff {args.material} ({args.part_type}): "
+        f"{e_start:.3f} -> {e_end:.3f} MPa  (stiff end -> soft end)"
+    )
 
     save_stl(out, output_path)
 

@@ -45,21 +45,23 @@ from pathlib import Path
 import numpy as np
 import PyScaffolder
 import pyvista as pv
-
 from scaffold import (
     SUPPORTED_SURFACES,
     TPMS_FUNCTIONS,
+    apply_boundary_and_skin,
     build_uniform_grid,
     compute_inside_and_sdf,
     compute_tpms_gradient_field,
-    apply_boundary_and_skin,
     postprocess,
     save_stl,
 )
 from scaffold.inspect import inspect as _run_inspect
 from scaffold.profile import PROFILES, get_profile_fn
-from scaffold.stiffness import stiffness_report, print_stiffness_report
-from scaffold.simplify import simplify_to_count, mesh_quality_stats, DEFAULT_TARGET_FACES
+from scaffold.simplify import (
+    DEFAULT_TARGET_FACES,
+    simplify_to_count,
+)
+from scaffold.stiffness import print_stiffness_report, stiffness_report
 
 AXIS_MAP = {"x": 0, "y": 1, "z": 2}
 
@@ -72,6 +74,7 @@ def _inspect_inline(path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Stiffness auto-solver
 # ---------------------------------------------------------------------------
+
 
 def _resolve_iso_from_stiffness(args: argparse.Namespace) -> tuple[float, float]:
     """Compute iso_start and iso_end from spring-constant targets.
@@ -91,15 +94,17 @@ def _resolve_iso_from_stiffness(args: argparse.Namespace) -> tuple[float, float]
         sys.exit(1)
 
     report = stiffness_report(
-        args.k_base, args.k_tip,
-        args.pad_area, args.pad_thickness,
+        args.k_base,
+        args.k_tip,
+        args.pad_area,
+        args.pad_thickness,
         material=args.material,
         surface=args.surface,
     )
     print_stiffness_report(report)
 
     iso_start = report["iso_base"]
-    iso_end   = report["iso_tip"]
+    iso_end = report["iso_tip"]
 
     # Warn when targets are at the calibration table boundary (clamped)
     TABLE_MAX_ISO = 1.25
@@ -118,6 +123,7 @@ def _resolve_iso_from_stiffness(args: argparse.Namespace) -> tuple[float, float]
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 def validate_args(args: argparse.Namespace) -> None:
     errors = []
@@ -139,7 +145,7 @@ def validate_args(args: argparse.Namespace) -> None:
 
     if args.k_base is None and args.k_tip is None:
         flat_cell = abs(args.cell_size_start - args.cell_size_end) < 1e-6
-        flat_iso  = abs(args.isolevel_start  - args.isolevel_end)  < 1e-6
+        flat_iso = abs(args.isolevel_start - args.isolevel_end) < 1e-6
         if flat_cell and flat_iso:
             print(
                 "[warn] No gradient detected: cell-size and isolevel are identical at both ends.\n"
@@ -153,6 +159,7 @@ def validate_args(args: argparse.Namespace) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate gradient-stiffness TPMS scaffold from STL",
@@ -164,67 +171,136 @@ def main() -> None:
 
     # --- TPMS parameters ---
     parser.add_argument(
-        "--surface", "-s", default="gyroid", choices=SUPPORTED_SURFACES,
+        "--surface",
+        "-s",
+        default="gyroid",
+        choices=SUPPORTED_SURFACES,
         help="TPMS surface type",
     )
     parser.add_argument(
-        "--axis", "-a", default="z", choices=["x", "y", "z"],
+        "--axis",
+        "-a",
+        default="z",
+        choices=["x", "y", "z"],
         help="Gradient direction axis (base=min end, tip=max end)",
     )
-    parser.add_argument("--cell-size-start", type=float, default=5.0,
-                        help="Unit cell size (mm) at axis minimum — smaller = stiffer")
-    parser.add_argument("--cell-size-end",   type=float, default=5.0,
-                        help="Unit cell size (mm) at axis maximum")
+    parser.add_argument(
+        "--cell-size-start",
+        type=float,
+        default=5.0,
+        help="Unit cell size (mm) at axis minimum — smaller = stiffer",
+    )
+    parser.add_argument(
+        "--cell-size-end",
+        type=float,
+        default=5.0,
+        help="Unit cell size (mm) at axis maximum",
+    )
 
     # --- Iso level: manual or auto from stiffness ---
     iso_group = parser.add_argument_group(
         "iso level (manual)",
         "Set iso level explicitly. Ignored if --k-base / --k-tip are given.",
     )
-    iso_group.add_argument("--isolevel-start", type=float, default=0.0,
-                           help="Isolevel at axis minimum  (lower = denser/stiffer)")
-    iso_group.add_argument("--isolevel-end",   type=float, default=0.0,
-                           help="Isolevel at axis maximum  (higher = more porous/softer)")
+    iso_group.add_argument(
+        "--isolevel-start",
+        type=float,
+        default=0.0,
+        help="Isolevel at axis minimum  (lower = denser/stiffer)",
+    )
+    iso_group.add_argument(
+        "--isolevel-end",
+        type=float,
+        default=0.0,
+        help="Isolevel at axis maximum  (higher = more porous/softer)",
+    )
 
     stiff_group = parser.add_argument_group(
         "iso level (from stiffness targets)",
         "Auto-compute iso levels from spring-constant targets via Gibson-Ashby model. "
         "When used, --isolevel-start / --isolevel-end are ignored.",
     )
-    stiff_group.add_argument("--k-base", type=float, default=None,
-                             help="Target spring constant at stiff end (N/mm)")
-    stiff_group.add_argument("--k-tip",  type=float, default=None,
-                             help="Target spring constant at soft end  (N/mm), must be < --k-base")
-    stiff_group.add_argument("--pad-area",      type=float, default=None,
-                             help="Pad cross-sectional area perpendicular to gradient axis (mm2)")
-    stiff_group.add_argument("--pad-thickness", type=float, default=None,
-                             help="Pad height along the gradient axis (mm)")
-    stiff_group.add_argument("--material", default="95A", choices=["95A", "87A", "83A"],
-                             help="TPU filament grade (affects bulk modulus)")
+    stiff_group.add_argument(
+        "--k-base",
+        type=float,
+        default=None,
+        help="Target spring constant at stiff end (N/mm)",
+    )
+    stiff_group.add_argument(
+        "--k-tip",
+        type=float,
+        default=None,
+        help="Target spring constant at soft end  (N/mm), must be < --k-base",
+    )
+    stiff_group.add_argument(
+        "--pad-area",
+        type=float,
+        default=None,
+        help="Pad cross-sectional area perpendicular to gradient axis (mm2)",
+    )
+    stiff_group.add_argument(
+        "--pad-thickness",
+        type=float,
+        default=None,
+        help="Pad height along the gradient axis (mm)",
+    )
+    stiff_group.add_argument(
+        "--material",
+        default="95A",
+        choices=["95A", "87A", "83A"],
+        help="TPU filament grade (affects bulk modulus)",
+    )
 
     # --- Mesh and rendering ---
-    parser.add_argument("--grid-size", "-g", type=int, default=80,
-                        help="Voxel resolution along the longest axis")
-    parser.add_argument("--smooth-steps", type=int, default=10,
-                        help="Taubin smoothing iterations (0 = none)")
-    parser.add_argument("--shell-thickness", type=float, default=1.0,
-                        help="Outer skin thickness (mm) to close the boundary. "
-                             "0 disables it (leaves open edges at model surface).")
-    parser.add_argument("--wall-layers", type=int, default=0, metavar="N",
-                        help="Number of solid outer-wall layers (0 = no shell). "
-                             "Thickness = N × --layer-height. Overrides --shell-thickness when > 0.")
-    parser.add_argument("--layer-height", type=float, default=0.2,
-                        help="Layer height in mm for wall thickness calculation "
-                             "(default 0.2 mm = Bambu TPU standard)")
     parser.add_argument(
-        "--profile", default="linear", choices=list(PROFILES),
+        "--grid-size",
+        "-g",
+        type=int,
+        default=80,
+        help="Voxel resolution along the longest axis",
+    )
+    parser.add_argument(
+        "--smooth-steps",
+        type=int,
+        default=10,
+        help="Taubin smoothing iterations (0 = none)",
+    )
+    parser.add_argument(
+        "--shell-thickness",
+        type=float,
+        default=1.0,
+        help="Outer skin thickness (mm) to close the boundary. "
+        "0 disables it (leaves open edges at model surface).",
+    )
+    parser.add_argument(
+        "--wall-layers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of solid outer-wall layers (0 = no shell). "
+        "Thickness = N × --layer-height. Overrides --shell-thickness when > 0.",
+    )
+    parser.add_argument(
+        "--layer-height",
+        type=float,
+        default=0.2,
+        help="Layer height in mm for wall thickness calculation "
+        "(default 0.2 mm = Bambu TPU standard)",
+    )
+    parser.add_argument(
+        "--profile",
+        default="linear",
+        choices=list(PROFILES),
         help="Gradient profile shape: linear, sigmoid, exponential, plateau.",
     )
     parser.add_argument(
-        "--simplify", type=int, default=None, metavar="TARGET_FACES",
+        "--simplify",
+        type=int,
+        default=None,
+        metavar="TARGET_FACES",
         help="Reduce output to approximately TARGET_FACES triangles using quadric "
-             f"decimation after generation (default: no simplification). "
-             f"Suggested value: {DEFAULT_TARGET_FACES:,} for fast slicer loading.",
+        f"decimation after generation (default: no simplification). "
+        f"Suggested value: {DEFAULT_TARGET_FACES:,} for fast slicer loading.",
     )
 
     args = parser.parse_args()
@@ -235,18 +311,21 @@ def main() -> None:
         iso_start, iso_end = _resolve_iso_from_stiffness(args)
     else:
         if (args.k_base is None) != (args.k_tip is None):
-            print("[error] Provide both --k-base and --k-tip, or neither.", file=sys.stderr)
+            print(
+                "[error] Provide both --k-base and --k-tip, or neither.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         iso_start = args.isolevel_start
-        iso_end   = args.isolevel_end
+        iso_end = args.isolevel_end
 
     input_path = Path(args.input)
     if not input_path.exists():
         print(f"[error] Input not found: {input_path}", file=sys.stderr)
         sys.exit(1)
 
-    axis_idx   = AXIS_MAP[args.axis]
-    tpms_fn    = TPMS_FUNCTIONS[args.surface]
+    axis_idx = AXIS_MAP[args.axis]
+    tpms_fn = TPMS_FUNCTIONS[args.surface]
     profile_fn = get_profile_fn(args.profile)
 
     if args.output is None:
@@ -263,15 +342,23 @@ def main() -> None:
 
     print(f"[info] Input    : {input_path}")
     print(f"[info] Output   : {output_path}")
-    print(f"[info] Surface  : {args.surface}  axis: {args.axis}  grid: {args.grid_size}")
-    print(f"[info] Cell size: {args.cell_size_start:.4g} -> {args.cell_size_end:.4g} mm")
+    print(
+        f"[info] Surface  : {args.surface}  axis: {args.axis}  grid: {args.grid_size}"
+    )
+    print(
+        f"[info] Cell size: {args.cell_size_start:.4g} -> {args.cell_size_end:.4g} mm"
+    )
     print(f"[info] Iso level: {iso_start:+.3f} -> {iso_end:+.3f}")
     print(f"[info] Profile  : {args.profile}")
     effective_shell = (
-        args.wall_layers * args.layer_height if args.wall_layers > 0 else args.shell_thickness
+        args.wall_layers * args.layer_height
+        if args.wall_layers > 0
+        else args.shell_thickness
     )
     if args.wall_layers > 0:
-        print(f"[info] Shell    : {args.wall_layers} layers × {args.layer_height} mm = {effective_shell:.2f} mm")
+        print(
+            f"[info] Shell    : {args.wall_layers} layers × {args.layer_height} mm = {effective_shell:.2f} mm"
+        )
     else:
         print(f"[info] Shell    : {effective_shell:.2f} mm")
 
@@ -282,14 +369,14 @@ def main() -> None:
         mesh = mesh.clean().triangulate()
 
     bounds = mesh.bounds
-    extents = [bounds[1]-bounds[0], bounds[3]-bounds[2], bounds[5]-bounds[4]]
+    extents = [bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]]
     print(f"[info] Model    : {extents[0]:.1f}x{extents[1]:.1f}x{extents[2]:.1f} mm")
 
     t0 = time.time()
 
     print("[1/4] Building voxel grid...")
     X, Y, Z, delta, nx, ny, nz = build_uniform_grid(bounds, args.grid_size)
-    print(f"      Grid: {nx}x{ny}x{nz} = {nx*ny*nz:,} voxels  delta={delta:.4f} mm")
+    print(f"      Grid: {nx}x{ny}x{nz} = {nx * ny * nz:,} voxels  delta={delta:.4f} mm")
 
     print("[2/4] Computing inside mask and signed-distance field...")
     inside, sdf = compute_inside_and_sdf(mesh, X, Y, Z)
@@ -297,9 +384,15 @@ def main() -> None:
 
     print("[3/4] Computing gradient TPMS field...")
     tpms_field = compute_tpms_gradient_field(
-        tpms_fn, X, Y, Z, axis_idx,
-        args.cell_size_start, args.cell_size_end,
-        iso_start, iso_end,
+        tpms_fn,
+        X,
+        Y,
+        Z,
+        axis_idx,
+        args.cell_size_start,
+        args.cell_size_end,
+        iso_start,
+        iso_end,
         bounds,
         profile_fn=profile_fn,
     )
@@ -317,7 +410,10 @@ def main() -> None:
     )
 
     if verts.shape[0] == 0:
-        print("[error] No mesh produced — try adjusting isolevel or cell size.", file=sys.stderr)
+        print(
+            "[error] No mesh produced — try adjusting isolevel or cell size.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     out_mesh = postprocess(verts, faces, args.smooth_steps, verbose=True)
@@ -325,9 +421,11 @@ def main() -> None:
     if args.simplify is not None and out_mesh.n_cells > args.simplify:
         before = out_mesh.n_cells
         out_mesh = simplify_to_count(out_mesh, args.simplify)
-        print(f"      Simplified: {before:,} → {out_mesh.n_cells:,} faces "
-              f"({100*(1 - out_mesh.n_cells/before):.1f}% removed)  "
-              f"open={out_mesh.n_open_edges}")
+        print(
+            f"      Simplified: {before:,} → {out_mesh.n_cells:,} faces "
+            f"({100 * (1 - out_mesh.n_cells / before):.1f}% removed)  "
+            f"open={out_mesh.n_open_edges}"
+        )
 
     elapsed = time.time() - t0
 

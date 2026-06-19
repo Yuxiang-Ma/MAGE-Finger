@@ -28,11 +28,23 @@ def main() -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("input", nargs="+", help="STL file(s) to inspect")
-    parser.add_argument("--nozzle", type=float, default=0.4, help="Nozzle diameter in mm")
-    parser.add_argument("--min-feature", type=float, default=0.8,
-                        help="Minimum recommended feature size in mm")
-    parser.add_argument("--build-plate", type=float, nargs=3, default=[256, 256, 256],
-                        metavar=("X", "Y", "Z"), help="Build plate dimensions in mm")
+    parser.add_argument(
+        "--nozzle", type=float, default=0.4, help="Nozzle diameter in mm"
+    )
+    parser.add_argument(
+        "--min-feature",
+        type=float,
+        default=0.8,
+        help="Minimum recommended feature size in mm",
+    )
+    parser.add_argument(
+        "--build-plate",
+        type=float,
+        nargs=3,
+        default=[256, 256, 256],
+        metavar=("X", "Y", "Z"),
+        help="Build plate dimensions in mm",
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 

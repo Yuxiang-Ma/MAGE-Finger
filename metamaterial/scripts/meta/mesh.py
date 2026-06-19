@@ -50,10 +50,9 @@ def postprocess(
         if n_regions > 1:
             sizes = [(region_ids == i).sum() for i in range(n_regions)]
             largest = int(np.argmax(sizes))
-            mesh = (
-                cc.threshold([largest - 0.5, largest + 0.5], scalars="RegionId")
-                .extract_surface()
-            )
+            mesh = cc.threshold(
+                [largest - 0.5, largest + 0.5], scalars="RegionId"
+            ).extract_surface()
             if verbose:
                 print(f"      Removed {n_regions - 1} floating component(s)")
 

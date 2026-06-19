@@ -16,7 +16,7 @@ Typical use: stiff base -> soft tip finger pad
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import numpy as np
 import pyvista as pv
@@ -32,6 +32,7 @@ AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
 
 
 # --- gradient profiles: t in [0,1] -> v in [0,1] ----------------------------
+
 
 def linear(t: np.ndarray) -> np.ndarray:
     return np.clip(t, 0.0, 1.0)
@@ -65,6 +66,7 @@ def get_profile_fn(name: str) -> Callable[[np.ndarray], np.ndarray]:
 
 # --- grading class ----------------------------------------------------------
 
+
 class AxisDensityGrading(OffsetGrading):
     """Per-point offset that produces a density gradient along one axis."""
 
@@ -77,7 +79,7 @@ class AxisDensityGrading(OffsetGrading):
         axis_max: float,
         density_start: float,
         density_end: float,
-        profile_fn: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        profile_fn: Callable[[np.ndarray], np.ndarray] | None = None,
         resolution: int = 20,
         n_samples: int = 15,
     ) -> None:
@@ -92,20 +94,28 @@ class AxisDensityGrading(OffsetGrading):
         d_lo, d_hi = min(density_start, density_end), max(density_start, density_end)
         ds = np.linspace(d_lo, d_hi, n_samples)
         offs = np.array(
-            [Tpms.offset_from_density(surface_fn, part_type, float(d), resolution) for d in ds]
+            [
+                Tpms.offset_from_density(surface_fn, part_type, float(d), resolution)
+                for d in ds
+            ]
         )
         self._ds = ds
         self._offs = offs
 
     def compute_offset(self, grid: pv.UnstructuredGrid) -> np.ndarray:
         coords = np.asarray(grid.points)[:, self.axis_idx]
-        t = np.clip((coords - self.axis_min) / (self.axis_max - self.axis_min), 0.0, 1.0)
+        t = np.clip(
+            (coords - self.axis_min) / (self.axis_max - self.axis_min), 0.0, 1.0
+        )
         v = self.profile_fn(t)
-        target_density = self.density_start + v * (self.density_end - self.density_start)
+        target_density = self.density_start + v * (
+            self.density_end - self.density_start
+        )
         return np.interp(target_density, self._ds, self._offs)
 
 
 # --- high-level generation --------------------------------------------------
+
 
 def generate_gradient(
     input_mesh: pv.PolyData,
@@ -151,24 +161,44 @@ def generate_gradient(
     amin, amax = [b[0], b[2], b[4]][ai], [b[1], b[3], b[5]][ai]
 
     grading = AxisDensityGrading(
-        surface_fn=fn, part_type=pt, axis_idx=ai,
-        axis_min=amin, axis_max=amax,
-        density_start=density_start, density_end=density_end,
-        profile_fn=prof, resolution=resolution,
+        surface_fn=fn,
+        part_type=pt,
+        axis_idx=ai,
+        axis_min=amin,
+        axis_max=amax,
+        density_start=density_start,
+        density_end=density_end,
+        profile_fn=prof,
+        resolution=resolution,
     )
     out = Infill(
-        obj=input_mesh, surface_function=fn, cell_size=cell_size,
-        offset=grading, resolution=resolution,
+        obj=input_mesh,
+        surface_function=fn,
+        cell_size=cell_size,
+        offset=grading,
+        resolution=resolution,
     ).generate_vtk(type_part=pt)
 
     rho = relative_density(out, input_mesh)
     logger.info(
         "Gradient %s (%s) axis=%s: d %.2f->%.2f profile=%s avg_density~%.3f open_edges=%d",
-        surface, pt, axis, density_start, density_end, profile, rho, out.n_open_edges,
+        surface,
+        pt,
+        axis,
+        density_start,
+        density_end,
+        profile,
+        rho,
+        out.n_open_edges,
     )
     return GenResult(
-        mesh=out, surface=surface, part_type=pt, cell_size=cell_size,
-        relative_density=rho, offset=None, open_edges=int(out.n_open_edges),
+        mesh=out,
+        surface=surface,
+        part_type=pt,
+        cell_size=cell_size,
+        relative_density=rho,
+        offset=None,
+        open_edges=int(out.n_open_edges),
     )
 
 

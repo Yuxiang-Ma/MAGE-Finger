@@ -93,7 +93,7 @@ def compute_tpms_gradient_field(
     v = profile_fn(t) if profile_fn is not None else t
 
     cell_sizes = cell_size_start + v * (cell_size_end - cell_size_start)
-    isolevels  = isolevel_start  + v * (isolevel_end  - isolevel_start)
+    isolevels = isolevel_start + v * (isolevel_end - isolevel_start)
     coffs = 2.0 * np.pi / cell_sizes
 
     return tpms_fn(coffs, X, Y, Z) - isolevels
@@ -130,7 +130,7 @@ def apply_boundary_and_skin(
     return np.where(
         inside,
         tpms_field - shell_mask * DRIVE,  # interior: TPMS with solid skin
-        DRIVE,                             # exterior: void
+        DRIVE,  # exterior: void
     )
 
 

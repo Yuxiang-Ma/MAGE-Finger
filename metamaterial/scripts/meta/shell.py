@@ -21,11 +21,13 @@ import pyvista as pv
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LAYER_HEIGHT: float = 0.2   # mm — Bambu Studio TPU default
-DEFAULT_WALL_LAYERS: int = 0         # 0 = no shell
+DEFAULT_LAYER_HEIGHT: float = 0.2  # mm — Bambu Studio TPU default
+DEFAULT_WALL_LAYERS: int = 0  # 0 = no shell
 
 
-def shell_thickness(wall_layers: int, layer_height: float = DEFAULT_LAYER_HEIGHT) -> float:
+def shell_thickness(
+    wall_layers: int, layer_height: float = DEFAULT_LAYER_HEIGHT
+) -> float:
     """Convert a layer count to a physical thickness in mm."""
     return wall_layers * layer_height
 
@@ -39,9 +41,8 @@ def _flip_faces(mesh: pv.PolyData) -> pv.PolyData:
     """
     if hasattr(mesh, "flip_faces"):
         return mesh.flip_faces()
-    import numpy as np
     faces = mesh.faces.reshape(-1, 4).copy()
-    faces[:, 1:] = faces[:, 1:][:, ::-1]   # reverse vertex order per triangle
+    faces[:, 1:] = faces[:, 1:][:, ::-1]  # reverse vertex order per triangle
     out = mesh.copy()
     out.faces = faces.ravel()
     return out

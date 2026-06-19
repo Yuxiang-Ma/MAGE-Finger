@@ -20,14 +20,14 @@ import numpy as np
 # TPU bulk Young's modulus (MPa), approximate for 0.4mm-nozzle FDM.
 TPU_MODULUS: dict[str, float] = {
     "95A": 15.0,
-    "87A":  8.0,
-    "85A":  6.0,   # interpolated; absent from scaffolder's table
-    "83A":  5.0,
+    "87A": 8.0,
+    "85A": 6.0,  # interpolated; absent from scaffolder's table
+    "83A": 5.0,
 }
 
 # Gibson-Ashby exponent by part type.
 PART_TYPE_EXPONENT: dict[str, float] = {
-    "sheet":          1.8,
+    "sheet": 1.8,
     "lower skeletal": 2.2,
     "upper skeletal": 2.2,
 }
@@ -49,7 +49,7 @@ def effective_modulus(
     e_bulk = TPU_MODULUS.get(material, TPU_MODULUS["85A"])
     n = exponent_for(part_type)
     rho = float(np.clip(relative_density, 1e-3, 1.0))
-    return e_bulk * rho ** n
+    return e_bulk * rho**n
 
 
 def spring_constant(

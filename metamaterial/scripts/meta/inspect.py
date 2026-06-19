@@ -20,15 +20,15 @@ from pathlib import Path
 import numpy as np
 import pyvista as pv
 
-
 # ---------------------------------------------------------------------------
 # Report data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CheckResult:
     name: str
-    status: str    # "PASS", "WARN", "FAIL", "INFO"
+    status: str  # "PASS", "WARN", "FAIL", "INFO"
     message: str
     detail: str = ""
 
@@ -52,15 +52,17 @@ class InspectionReport:
 
     def print(self, verbose: bool = False) -> None:
         COLORS = {
-            "PASS": "\033[92m", "WARN": "\033[93m",
-            "FAIL": "\033[91m", "INFO": "\033[96m",
+            "PASS": "\033[92m",
+            "WARN": "\033[93m",
+            "FAIL": "\033[91m",
+            "INFO": "\033[96m",
         }
         RESET = "\033[0m"
 
-        print(f"\n{'='*60}")
-        print(f"  Scaffold Inspection Report")
+        print(f"\n{'=' * 60}")
+        print("  Scaffold Inspection Report")
         print(f"  File: {self.path.name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         for r in self.results:
             color = COLORS.get(r.status, "")
@@ -71,7 +73,7 @@ class InspectionReport:
                     print(f"              {line}")
 
         verdict_color = COLORS.get(self.verdict, "")
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  Verdict: {verdict_color}{self.verdict}{RESET}")
         if self.verdict == "PASS":
             print("  Ready to slice and print.")
@@ -79,12 +81,13 @@ class InspectionReport:
             print("  Use Bambu Studio -> Repair before slicing.")
         else:
             print("  Mesh requires repair before printing (see FAIL items above).")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
 
 # ---------------------------------------------------------------------------
 # Individual checks
 # ---------------------------------------------------------------------------
+
 
 def _guard_empty(mesh: pv.PolyData, report: InspectionReport, check_name: str) -> bool:
     """Return True (and add WARN) if mesh has no cells, so callers can skip."""
@@ -99,11 +102,19 @@ def check_open_edges(mesh: pv.PolyData, report: InspectionReport) -> None:
     if n == 0:
         report.add("Open edges", "PASS", "0 open edges — watertight")
     elif n <= 50:
-        report.add("Open edges", "WARN", f"{n} open edges (slicer may auto-repair)",
-                   "Try Bambu Studio Repair or MeshMixer Fill Holes.")
+        report.add(
+            "Open edges",
+            "WARN",
+            f"{n} open edges (slicer may auto-repair)",
+            "Try Bambu Studio Repair or MeshMixer Fill Holes.",
+        )
     else:
-        report.add("Open edges", "FAIL", f"{n} open edges — mesh is not watertight",
-                   "Regenerate with a larger --shell-thickness or higher --grid-size.")
+        report.add(
+            "Open edges",
+            "FAIL",
+            f"{n} open edges — mesh is not watertight",
+            "Regenerate with a larger --shell-thickness or higher --grid-size.",
+        )
 
 
 def check_manifold(mesh: pv.PolyData, report: InspectionReport) -> None:
@@ -111,16 +122,23 @@ def check_manifold(mesh: pv.PolyData, report: InspectionReport) -> None:
         report.add("Manifold", "PASS", "Mesh is manifold")
         return
     nm_edges = mesh.extract_feature_edges(
-        boundary_edges=False, non_manifold_edges=True,
-        feature_edges=False, manifold_edges=False,
+        boundary_edges=False,
+        non_manifold_edges=True,
+        feature_edges=False,
+        manifold_edges=False,
     )
     nm_count = nm_edges.n_cells
     if nm_count == 0:
-        report.add("Manifold", "WARN", "Non-manifold vertices detected (no non-manifold edges)")
+        report.add(
+            "Manifold", "WARN", "Non-manifold vertices detected (no non-manifold edges)"
+        )
     else:
-        report.add("Manifold", "FAIL",
-                   f"{nm_count} non-manifold edges detected",
-                   "These cause ambiguous geometry that slicers cannot reliably slice.")
+        report.add(
+            "Manifold",
+            "FAIL",
+            f"{nm_count} non-manifold edges detected",
+            "These cause ambiguous geometry that slicers cannot reliably slice.",
+        )
 
 
 def check_connectivity(mesh: pv.PolyData, report: InspectionReport) -> None:
@@ -138,17 +156,23 @@ def check_connectivity(mesh: pv.PolyData, report: InspectionReport) -> None:
 
     detail = (
         f"Main body: {sizes[0]:,} faces ({main_frac:.1f}%)\n"
-        f"Floating pieces: {floating}  (sizes: {sizes[1:min(6, len(sizes))]})"
+        f"Floating pieces: {floating}  (sizes: {sizes[1 : min(6, len(sizes))]})"
     )
 
     if main_frac >= 99.5 and floating <= 5:
-        report.add("Connectivity", "WARN",
-                   f"{floating} tiny floating piece(s) — slicer will ignore",
-                   detail)
+        report.add(
+            "Connectivity",
+            "WARN",
+            f"{floating} tiny floating piece(s) — slicer will ignore",
+            detail,
+        )
     else:
-        report.add("Connectivity", "FAIL",
-                   f"{n_regions} components; main body only {main_frac:.1f}%",
-                   detail)
+        report.add(
+            "Connectivity",
+            "FAIL",
+            f"{n_regions} components; main body only {main_frac:.1f}%",
+            detail,
+        )
 
 
 def check_degenerate_faces(mesh: pv.PolyData, report: InspectionReport) -> None:
@@ -163,11 +187,18 @@ def check_degenerate_faces(mesh: pv.PolyData, report: InspectionReport) -> None:
     if n_degen == 0:
         report.add("Degenerate faces", "PASS", "No zero-area triangles")
     elif n_degen < 100:
-        report.add("Degenerate faces", "WARN", f"{n_degen} near-zero triangles (usually harmless)")
+        report.add(
+            "Degenerate faces",
+            "WARN",
+            f"{n_degen} near-zero triangles (usually harmless)",
+        )
     else:
-        report.add("Degenerate faces", "FAIL",
-                   f"{n_degen} degenerate triangles",
-                   "Clean the mesh with pyvista .clean() before printing.")
+        report.add(
+            "Degenerate faces",
+            "FAIL",
+            f"{n_degen} degenerate triangles",
+            "Clean the mesh with pyvista .clean() before printing.",
+        )
 
 
 def check_feature_size(
@@ -185,7 +216,7 @@ def check_feature_size(
     """
     if _guard_empty(mesh, report, "Feature size"):
         return
-    vol  = abs(mesh.volume)
+    vol = abs(mesh.volume)
     area = mesh.area
     if area < 1e-9:
         report.add("Feature size", "WARN", "Zero surface area — check skipped")
@@ -200,17 +231,26 @@ def check_feature_size(
     )
 
     if thickness >= min_feature_mm:
-        report.add("Feature size", "PASS",
-                   f"Mean wall {thickness:.2f} mm >= {min_feature_mm} mm",
-                   detail)
+        report.add(
+            "Feature size",
+            "PASS",
+            f"Mean wall {thickness:.2f} mm >= {min_feature_mm} mm",
+            detail,
+        )
     elif thickness >= nozzle_mm:
-        report.add("Feature size", "WARN",
-                   f"Mean wall {thickness:.2f} mm — marginal for rigid materials",
-                   detail + "\nTPU prints thinner features than rigid filaments; likely OK.")
+        report.add(
+            "Feature size",
+            "WARN",
+            f"Mean wall {thickness:.2f} mm — marginal for rigid materials",
+            detail + "\nTPU prints thinner features than rigid filaments; likely OK.",
+        )
     else:
-        report.add("Feature size", "FAIL",
-                   f"Mean wall {thickness:.2f} mm < nozzle {nozzle_mm} mm — struts too thin",
-                   detail + "\nIncrease --unit-cell-size or decrease --isolevel.")
+        report.add(
+            "Feature size",
+            "FAIL",
+            f"Mean wall {thickness:.2f} mm < nozzle {nozzle_mm} mm — struts too thin",
+            detail + "\nIncrease --unit-cell-size or decrease --isolevel.",
+        )
 
 
 def check_normals(mesh: pv.PolyData, report: InspectionReport) -> None:
@@ -223,8 +263,10 @@ def check_normals(mesh: pv.PolyData, report: InspectionReport) -> None:
         return
     try:
         mesh.compute_normals(
-            cell_normals=True, point_normals=False,
-            consistent_normals=True, auto_orient_normals=True,
+            cell_normals=True,
+            point_normals=False,
+            consistent_normals=True,
+            auto_orient_normals=True,
             non_manifold_traversal=False,
         )
         report.add("Normals", "PASS", "Normals are outward-consistent")
@@ -232,7 +274,9 @@ def check_normals(mesh: pv.PolyData, report: InspectionReport) -> None:
         report.add("Normals", "WARN", f"Normal consistency check could not run: {exc}")
 
 
-def check_bounds(mesh: pv.PolyData, report: InspectionReport, build_plate: tuple) -> None:
+def check_bounds(
+    mesh: pv.PolyData, report: InspectionReport, build_plate: tuple
+) -> None:
     b = mesh.bounds
     size = (b[1] - b[0], b[3] - b[2], b[5] - b[4])
     fits = all(size[i] <= build_plate[i] for i in range(3))
@@ -249,6 +293,7 @@ def check_bounds(mesh: pv.PolyData, report: InspectionReport, build_plate: tuple
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def inspect(
     path: Path,
     nozzle_mm: float = 0.4,
@@ -260,7 +305,9 @@ def inspect(
     mesh = pv.read(str(path))
     report = InspectionReport(path=path)
 
-    print(f"[info] Loaded {path.name}: {mesh.n_points:,} vertices, {mesh.n_cells:,} faces")
+    print(
+        f"[info] Loaded {path.name}: {mesh.n_points:,} vertices, {mesh.n_cells:,} faces"
+    )
 
     check_open_edges(mesh, report)
     check_manifold(mesh, report)

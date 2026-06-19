@@ -26,26 +26,27 @@ Submodules:
 
 import importlib
 
-# --- eager: microgen-free, cheap ------------------------------------------
-from .mesh import load_mesh, save_stl, postprocess
-from .shell import DEFAULT_LAYER_HEIGHT, DEFAULT_WALL_LAYERS, shell_thickness, add_shell
-from .preview import axes_summary, recommended_axis, render_axes_png
-from .inspect import CheckResult, InspectionReport, inspect
 from .geometry import (
     ModelInfo,
-    model_info,
-    cross_section_area,
-    zone_bounds,
     check_gradient_feasibility,
+    cross_section_area,
+    model_info,
+    zone_bounds,
 )
+from .inspect import CheckResult, InspectionReport, inspect
+
+# --- eager: microgen-free, cheap ------------------------------------------
+from .mesh import load_mesh, postprocess, save_stl
+from .preview import axes_summary, recommended_axis, render_axes_png
+from .shell import DEFAULT_LAYER_HEIGHT, DEFAULT_WALL_LAYERS, add_shell, shell_thickness
 from .stiffness import (
-    TPU_MODULUS,
     PART_TYPE_EXPONENT,
-    effective_modulus,
-    spring_constant,
-    relative_stiffness,
+    TPU_MODULUS,
     density_for_spring_constant,
+    effective_modulus,
     exponent_for,
+    relative_stiffness,
+    spring_constant,
 )
 
 # --- lazy: microgen-dependent (name -> submodule) -------------------------
@@ -85,26 +86,51 @@ def __dir__() -> list[str]:
 
 __all__ = [
     # cells (lazy)
-    "SUPPORTED_SURFACES", "SURFACE_FUNCTIONS", "PART_TYPES",
-    "PART_TYPE_SOFTNESS", "get_surface_fn", "normalize_part_type",
+    "SUPPORTED_SURFACES",
+    "SURFACE_FUNCTIONS",
+    "PART_TYPES",
+    "PART_TYPE_SOFTNESS",
+    "get_surface_fn",
+    "normalize_part_type",
     # generator (lazy)
-    "GenResult", "relative_density", "generate",
+    "GenResult",
+    "relative_density",
+    "generate",
     # gradient (lazy)
-    "AxisDensityGrading", "generate_gradient", "PROFILES",
-    "get_profile_fn", "AXIS_INDEX",
+    "AxisDensityGrading",
+    "generate_gradient",
+    "PROFILES",
+    "get_profile_fn",
+    "AXIS_INDEX",
     # mesh
-    "load_mesh", "save_stl", "postprocess",
+    "load_mesh",
+    "save_stl",
+    "postprocess",
     # shell
-    "DEFAULT_LAYER_HEIGHT", "DEFAULT_WALL_LAYERS", "shell_thickness", "add_shell",
+    "DEFAULT_LAYER_HEIGHT",
+    "DEFAULT_WALL_LAYERS",
+    "shell_thickness",
+    "add_shell",
     # preview
-    "axes_summary", "recommended_axis", "render_axes_png",
+    "axes_summary",
+    "recommended_axis",
+    "render_axes_png",
     # inspect
-    "CheckResult", "InspectionReport", "inspect",
+    "CheckResult",
+    "InspectionReport",
+    "inspect",
     # geometry
-    "ModelInfo", "model_info", "cross_section_area",
-    "zone_bounds", "check_gradient_feasibility",
+    "ModelInfo",
+    "model_info",
+    "cross_section_area",
+    "zone_bounds",
+    "check_gradient_feasibility",
     # stiffness
-    "TPU_MODULUS", "PART_TYPE_EXPONENT", "effective_modulus",
-    "spring_constant", "relative_stiffness",
-    "density_for_spring_constant", "exponent_for",
+    "TPU_MODULUS",
+    "PART_TYPE_EXPONENT",
+    "effective_modulus",
+    "spring_constant",
+    "relative_stiffness",
+    "density_for_spring_constant",
+    "exponent_for",
 ]
