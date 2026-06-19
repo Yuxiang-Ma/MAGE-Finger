@@ -29,11 +29,26 @@ Two generation modes:
 
 ## Requirements
 
+Recommended — dedicated conda-forge env (keeps numpy<2 for PyScaffolder's ABI,
+isolated from the `metamaterial` tool):
+
 ```bash
-pip install PyScaffolder pyvista numpy scipy
+conda env create -f environment.yml
+conda run -n scaffolder pip install --no-deps PyScaffolder
+conda run -n scaffolder python -m pytest tests/ -q
+```
+
+Or plain pip (numpy must be <2):
+
+```bash
+pip install "numpy<2" PyScaffolder pyvista scipy scikit-image
 ```
 
 PyScaffolder 1.5.3+ is required.  Tested on Python 3.10–3.12, Windows 10.
+
+> Note: PyScaffolder is compiled against numpy 1.x — keep this env on `numpy<2`.
+> The separate `metamaterial` tool (microgen) needs its own conda-forge env; the
+> two must not share a Python environment.
 
 ---
 

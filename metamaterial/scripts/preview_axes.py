@@ -2,7 +2,7 @@
 Preview the coordinate system / gradient orientation of an STL.
 
 Prints a text summary (which way x/y/z point, where density_start/end land) and,
-unless --no-png, writes a labelled PNG (matplotlib Agg, no VTK needed).
+unless --no-png, writes a labelled PNG (pyvista off-screen render).
 
 Examples:
     python preview_axes.py -i ../input/test.stl

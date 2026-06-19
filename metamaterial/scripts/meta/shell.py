@@ -30,6 +30,23 @@ def shell_thickness(wall_layers: int, layer_height: float = DEFAULT_LAYER_HEIGHT
     return wall_layers * layer_height
 
 
+def _flip_faces(mesh: pv.PolyData) -> pv.PolyData:
+    """Reverse face winding, compatible across pyvista versions.
+
+    pyvista >=0.45 has ``PolyData.flip_faces``; the conda-forge env pins
+    pyvista <0.45 (microgen constraint), so fall back to reversing the face
+    connectivity array by hand.
+    """
+    if hasattr(mesh, "flip_faces"):
+        return mesh.flip_faces()
+    import numpy as np
+    faces = mesh.faces.reshape(-1, 4).copy()
+    faces[:, 1:] = faces[:, 1:][:, ::-1]   # reverse vertex order per triangle
+    out = mesh.copy()
+    out.faces = faces.ravel()
+    return out
+
+
 def _make_inner_mesh(boundary: pv.PolyData, thickness: float) -> pv.PolyData:
     """Offset each vertex of *boundary* inward by *thickness* along its outward normal."""
     n = boundary.compute_normals(
@@ -77,7 +94,7 @@ def add_shell(
         # The shell solid = outer surface (normals out) + inner surface (normals in).
         # Flipping inner normals makes them point INTO the shell from the cavity side,
         # which, together with the outer surface, encloses the shell volume.
-        inner_flipped = inner.flip_faces()
+        inner_flipped = _flip_faces(inner)
         shell = boundary.merge(inner_flipped)
         result = scaffold.merge(shell)
         return result.triangulate()

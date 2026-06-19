@@ -1,3 +1,7 @@
+# DEPRECATED — prefer the conda-forge env (environment.yml / setup_env.sh).
+# This uv venv works for *generation* but its bundled VTK cannot render, so
+# preview_axes.py PNG output fails here. Kept only as a lightweight fallback.
+#
 # Isolated environment for the microgen metamaterial module.
 # Create with:  uv venv --python 3.12 .venv
 # Install with: uv pip install --python .venv/Scripts/python.exe -r requirements.txt

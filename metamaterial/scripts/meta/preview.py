@@ -8,7 +8,7 @@ Definition used everywhere in this package:
   * For a gradient along an axis, `density_start` is applied at the axis MINIMUM
     coordinate and `density_end` at the axis MAXIMUM coordinate.
 
-Rendering uses matplotlib's Agg backend (no OpenGL/VTK), so it works headless.
+Rendering uses pyvista/VTK off-screen, which works in the conda-forge env.
 """
 
 from __future__ import annotations
@@ -80,61 +80,57 @@ def render_axes_png(
     density_end: Optional[float] = None,
     title: Optional[str] = None,
 ) -> Path:
-    """Render a labelled coordinate preview to PNG (matplotlib Agg, no VTK)."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt  # noqa: F401  (registers 3d projection)
+    """Render a labelled coordinate preview to PNG using pyvista (off-screen).
+
+    Uses pyvista/VTK rendering, which works in the conda-forge env. (The earlier
+    matplotlib-Agg backend triggers a fatal exception there, so it is not used.)
+    """
+    import pyvista as _pv
 
     b = mesh.bounds
     rng = _ranges(mesh)
-    org = np.array([b[0], b[2], b[4]])
-    ext = np.array([b[1] - b[0], b[3] - b[2], b[5] - b[4]])
-    L = 0.6 * float(ext.max())
+    org = np.array([b[0], b[2], b[4]], dtype=float)
+    ext = np.array([b[1] - b[0], b[3] - b[2], b[5] - b[4]], dtype=float)
+    L = 0.5 * float(ext.max())
+    base = org - 0.10 * L
 
-    fig = plt.figure(figsize=(6, 6))
-    ax = fig.add_subplot(111, projection="3d")
-
-    # bounding box wireframe
-    corners = np.array([[x, y, z] for x in (b[0], b[1]) for y in (b[2], b[3]) for z in (b[4], b[5])])
-    edges = [(0, 1), (0, 2), (1, 3), (2, 3), (4, 5), (4, 6), (5, 7), (6, 7),
-             (0, 4), (1, 5), (2, 6), (3, 7)]
-    for a, c in edges:
-        ax.plot(*zip(corners[a], corners[c]), color="0.6", lw=0.8)
+    pl = _pv.Plotter(off_screen=True, window_size=(750, 750))
+    pl.add_mesh(mesh, color="tan", opacity=0.35)
+    pl.add_mesh(mesh.outline(), color="black", line_width=1)
 
     # RGB axis arrows from the min corner
-    base = org - 0.12 * L
     for i, name in enumerate(AXIS_NAMES):
         d = np.zeros(3)
         d[i] = 1.0
-        ax.quiver(*base, *d, length=L, color=AXIS_COLORS[name], lw=2.5, arrow_length_ratio=0.12)
-        tip = base + d * L * 1.05
-        ax.text(*tip, name.upper(), color=AXIS_COLORS[name], fontsize=13, fontweight="bold")
+        pl.add_mesh(_pv.Arrow(start=base, direction=d, scale=L), color=AXIS_COLORS[name])
+        tip = base + d * L * 1.12
+        pl.add_point_labels(
+            [tip], [name.upper()], text_color=AXIS_COLORS[name], font_size=22,
+            shape=None, show_points=False, always_visible=True,
+        )
 
-    # gradient direction arrow + labels
+    # gradient direction line + start/end labels
     if axis is not None:
         i = AXIS_NAMES.index(axis)
         lo, hi = rng[i]
-        start = np.array(mesh.center); start[i] = lo
-        end = np.array(mesh.center); end[i] = hi
-        ax.plot(*zip(start, end), color="black", lw=2.0, ls="--")
+        start = np.array(mesh.center, dtype=float); start[i] = lo
+        end = np.array(mesh.center, dtype=float); end[i] = hi
+        pl.add_mesh(_pv.Line(start, end), color="black", line_width=4)
         s_lab = f"start{'' if density_start is None else f' d={density_start:.2g}'} ({axis}={lo:.1f})"
         e_lab = f"end{'' if density_end is None else f' d={density_end:.2g}'} ({axis}={hi:.1f})"
-        ax.text(*start, s_lab, fontsize=9)
-        ax.text(*end, e_lab, fontsize=9)
+        pl.add_point_labels(
+            [start, end], [s_lab, e_lab], font_size=12,
+            shape=None, show_points=True, always_visible=True,
+        )
 
-    ax.set_xlabel("X (mm)"); ax.set_ylabel("Y (mm)"); ax.set_zlabel("Z (mm)")
-    try:
-        ax.set_box_aspect(ext)
-    except Exception:
-        pass
-    ax.set_title(title or "Coordinate system & gradient direction")
+    pl.add_text(title or "Coordinate system & gradient direction", font_size=10)
+    pl.add_axes(line_width=4)
+    pl.camera_position = "iso"
 
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(str(out_png), dpi=110)
-    import matplotlib.pyplot as plt2
-    plt2.close(fig)
+    pl.screenshot(str(out_png))
+    pl.close()
     return out_png
 
 

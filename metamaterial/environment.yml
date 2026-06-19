@@ -1,27 +1,34 @@
-# Recommended environment for the microgen metamaterial module.
+# Recommended environment for the microgen metamaterial module (conda-forge).
 #
-# conda-forge ships OpenCASCADE (OCP), VTK, and gmsh as ABI-matched binaries,
-# which fixes the VTK rendering DLL failures seen with the PyPI/uv venv. microgen
-# itself is not on conda-forge, so it is pip-installed on top.
+# Why conda-forge: it ships OpenCASCADE (OCP), VTK, cadquery, and pyvista as
+# ABI-matched binaries. This FIXES the VTK rendering DLL failure seen with the
+# PyPI/uv venv (vtkRenderingMatplotlib could not load there). Verified: offscreen
+# rendering works here, so previews can use pyvista natively.
 #
-# Create:
-#   conda env create -f environment.yml
-# Update:
-#   conda env update -f environment.yml --prune
-# Use:
-#   conda run -n metamaterial python scripts/generate_metamaterial.py ...
+# Two-step install (microgen / gmsh / typish are not on conda-forge in an
+# importable form, and must be pip-installed with --no-deps so they do NOT pull
+# PyPI wheels over the conda-forge binaries). Use the helper:
+#
+#     bash setup_env.sh
+#
+# or manually:
+#     conda env create -f environment.yml
+#     conda run -n metamaterial pip install --no-deps "gmsh>=4.13.1,<5" typish microgen
+#
+# Update conda layer:  conda env update -f environment.yml --prune
+# Use:                 conda run -n metamaterial python scripts/generate_metamaterial.py ...
 name: metamaterial
 channels:
   - conda-forge
 dependencies:
   - python=3.12
-  - cadquery          # pulls OCP (OpenCASCADE bindings)
+  - cadquery            # pulls OCP (OpenCASCADE bindings), ABI-matched with vtk
   - vtk
-  - gmsh
-  - pyvista
+  - pyvista=0.44.*      # microgen requires pyvista <0.45
+  - meshio>=5.3.5,<6
+  - scipy>=1.13.1,<1.16
   - numpy<2
-  - matplotlib
+  - multimethod         # microgen import dep
   - pytest
   - pip
-  - pip:
-      - microgen
+  # microgen / gmsh / typish: installed via setup_env.sh (pip --no-deps), see header.

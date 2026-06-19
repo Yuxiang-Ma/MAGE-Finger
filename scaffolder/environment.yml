@@ -1,0 +1,23 @@
+# conda-forge environment for the PyScaffolder-based scaffolder tool.
+#
+# PyScaffolder is PyPI-only (not on conda-forge) and is compiled against numpy
+# 1.x, so numpy is pinned <2 and PyScaffolder is pip-installed with --no-deps so
+# it does not pull a numpy 2 wheel over the conda-forge one.
+#
+# Two-step install:
+#     conda env create -f environment.yml
+#     conda run -n scaffolder pip install --no-deps PyScaffolder
+#
+# Use: conda run -n scaffolder python scripts/generate_scaffold.py -i input/test.stl
+name: scaffolder
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy<2
+  - pyvista
+  - scipy
+  - scikit-image
+  - pytest
+  - pip
+  # PyScaffolder: pip --no-deps post-create (see header).

@@ -24,31 +24,41 @@ A parallel tool to `../scaffolder`, built on [**microgen**](https://3mah.github.
 
 The skeletal design is both *softer* and *more printable*.
 
-## Requirements — use an isolated venv
+## Requirements — conda-forge env (recommended)
 
-`microgen` pulls a `cadquery-ocp`/`gmsh`/`vtk` stack that conflicts with the
-versions the shared `scaffolder` (PyScaffolder) env relies on. **Keep it in its
-own `uv` virtual environment** so the original `scaffolder` is never disturbed:
+`microgen` needs OpenCASCADE (OCP), VTK, and cadquery. **conda-forge** ships
+these as ABI-matched binaries, which fixes the VTK rendering failure seen with a
+plain PyPI/uv venv (there `vtkRenderingMatplotlib` could not load, so previews
+had to use matplotlib — which in turn crashes under conda). With conda-forge,
+**pyvista renders natively**, so previews use it directly.
 
 ```bash
 cd metamaterial
-uv venv --python 3.12 .venv
-uv pip install --python .venv/Scripts/python.exe -r requirements.txt
+bash setup_env.sh          # conda env create + pip --no-deps microgen/gmsh/typish
 ```
 
-Then run everything through that interpreter:
+`setup_env.sh` is two steps because microgen/gmsh/typish aren't on conda-forge:
+conda-forge provides the binaries (`environment.yml`), then `pip --no-deps`
+installs the leaves so they don't override the conda-forge stack. Run everything
+through the env:
 
 ```bash
 # tests
-.venv/Scripts/python.exe -m pytest tests/ -q
+conda run -n metamaterial python -m pytest tests/ -q
 
-# generation (from the scripts/ dir)
+# generation (from scripts/)
 cd scripts
-../.venv/Scripts/python.exe generate_metamaterial.py -i ../input/test.stl --density 0.3
+conda run -n metamaterial python generate_metamaterial.py -i ../input/test.stl --density 0.3
 ```
 
-> The `scaffolder` continues to use the base (conda) environment. The two never
-> share a Python env — that is intentional.
+> Each tool has its own conda-forge env (`metamaterial` here, `scaffolder` for
+> the PyScaffolder tool) — never `base`. They never share a Python env.
+
+### Legacy uv venv (deprecated)
+
+A `requirements.txt` for a uv venv is kept as a fallback. It works for
+*generation* but its bundled VTK can't render, so `preview_axes.py` PNG output
+fails there. Prefer the conda-forge env above.
 
 ## Layout
 
@@ -65,7 +75,8 @@ metamaterial/
 │       ├── cells.py        # surface catalogue + part types (≈ tpms.py)
 │       ├── generator.py    # microgen Infill core
 │       ├── gradient.py     # OffsetGrading density gradient
-│       ├── preview.py      # coordinate / gradient-axis preview
+│       ├── preview.py      # coordinate / gradient-axis preview (pyvista render)
+│       ├── shell.py        # optional solid outer-wall shell
 │       ├── mesh.py         # I/O + post-processing
 │       ├── inspect.py      # printability checks (shared logic)
 │       ├── geometry.py     # mesh geometry analysis (shared logic)
@@ -165,8 +176,8 @@ Keep mean wall thickness ≥ ~0.8 mm (the inspector reports it) so it stays prin
 
 ```bash
 cd metamaterial
-.venv/Scripts/python.exe -m pytest tests/ -q                 # all (incl. integration, ~1 min)
-.venv/Scripts/python.exe -m pytest tests/ -q -m "not integration"   # fast unit tests only
+conda run -n metamaterial python -m pytest tests/ -q                 # all (incl. integration, ~1.5 min)
+conda run -n metamaterial python -m pytest tests/ -q -m "not integration"   # fast unit tests only
 ```
 
-Status: **52 passed** (in the isolated venv).
+Status: **63 passed** (conda-forge `metamaterial` env).
